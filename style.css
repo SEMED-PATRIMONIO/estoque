@@ -1,90 +1,272 @@
-﻿:root {
-    --color-primary: #007bff;
-    --color-secondary: #0056b3;
-    --color-background: #f4f6f9;
-    --color-text: #333;
-    --color-success: #28a745;
-    --color-danger: #dc3545;
-    --color-warning: #ffc107;
-    --color-header-bg: #fff;
+﻿/* Variáveis de cores */
+:root {
+    --color-primary: #007bff; /* Azul vibrante */
+    --color-secondary: #0056b3; /* Azul escuro para hover */
+    --color-background: #f8f9fa; /* Fundo claro (quase branco) */
+    --color-text: #212529; /* Texto escuro */
+    --color-game-accent: #ffc107; /* Amarelo para destaque gamificado */
+    
+    /* NOVAS VARIÁVEIS PARA CONFIRMAÇÃO */
+    --color-success: #28a745; /* Verde para 'Sim' (Sucesso) */
+    --color-danger: #dc3545; /* Vermelho para 'Não' (Perigo/Cancelar) */
 }
 
-body { font-family: 'Segoe UI', sans-serif; background-color: var(--color-background); margin: 0; padding: 0; color: var(--color-text); }
-.hidden { display: none !important; }
-
-/* Login */
-#login-screen { max-width: 360px; margin: 80px auto; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; }
-#login-screen input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-#btn-login { width: 100%; background: var(--color-primary); color: white; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 10px; }
-
-/* Layout Principal */
-#main-app { max-width: 1400px; margin: 0 auto; padding: 20px; }
-header { background: var(--color-header-bg); padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px; }
-.header-content { display: flex; justify-content: space-between; align-items: center; }
-header h1 { margin: 0; color: var(--color-primary); font-size: 1.5rem; }
-
-/* Header Buttons */
-.btn-header { background: none; border: none; cursor: pointer; font-weight: 600; padding: 8px 15px; border-radius: 4px; transition: 0.2s; }
-.btn-logout { color: var(--color-danger); }
-.btn-logout:hover { background: #ffebeb; }
-#btn-config { color: #555; margin-right: 10px; }
-#btn-config:hover { background: #eee; color: var(--color-primary); }
-
-/* Abas Principais */
-#tabs { display: flex; gap: 5px; border-bottom: 3px solid #e9ecef; margin-bottom: 20px; flex-wrap: wrap; }
-.tab-button { padding: 12px 20px; border: none; background: #e9ecef; cursor: pointer; border-radius: 8px 8px 0 0; font-weight: 600; color: #555; transition: 0.2s; }
-.tab-button:hover { background: #dee2e6; }
-.tab-button.active { background: var(--color-primary); color: white; border-bottom: 3px solid var(--color-secondary); }
-
-/* Abas de Configuração (Sub-abas) */
-.sub-tabs { display: flex; gap: 5px; border-bottom: 2px solid #ccc; margin-bottom: 20px; background: #f8f9fa; padding: 10px 10px 0 10px; border-radius: 8px 8px 0 0; }
-.sub-tab-button { padding: 10px 15px; border: none; background: transparent; cursor: pointer; font-weight: 600; color: #666; border-bottom: 3px solid transparent; }
-.sub-tab-button:hover { color: var(--color-primary); }
-.sub-tab-button.active { color: var(--color-primary); border-bottom: 3px solid var(--color-primary); }
-
-/* Tabelas */
-.data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-.data-table th, .data-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-.data-table th { background: var(--color-primary); color: white; font-weight: 600; text-transform: uppercase; font-size: 0.85rem; }
-.data-table tr:hover { background: #f1f8ff; cursor: pointer; }
-.data-table .selected-row { background: #d0e8ff !important; }
-
-/* Tags e Status */
-.status-tag { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: bold; color: white; display: inline-block; }
-.status-pendente { background: #ffc107; color: #333; }
-.status-em_separacao { background: #17a2b8; }
-.status-aguardando_retirada { background: #6f42c1; }
-.status-em_transito { background: #fd7e14; }
-.status-entregue { background: #28a745; }
-.status-cancelado { background: #dc3545; }
-
-/* Modal Configurações (Full Screen Overlay) */
-.modal-full { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
-.config-container { background: white; width: 90%; height: 90%; border-radius: 10px; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
-.config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-.btn-close-header { background: var(--color-danger); color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
-
-/* Modal Comum */
-.modal { display: none; position: fixed; z-index: 3000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow: auto; }
-.modal-content { background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 90%; max-width: 600px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); position: relative; }
-
-/* Inputs e Botões Gerais */
-input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
-.action-buttons { margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
-.action-buttons button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; background: var(--color-primary); display: flex; align-items: center; gap: 5px; }
-.modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.btn-confirmar { background: var(--color-success); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-.btn-cancelar { background: var(--color-danger); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-
-/* GRADES DE UNIFORMES */
-.grid-uniformes-container { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
-.grid-item { flex: 0 0 70px; display: flex; flex-direction: column; align-items: center; }
-.grid-item label { font-size: 0.85em; font-weight: bold; margin-bottom: 4px; color: #555; }
-.grid-item input { text-align: center; font-weight: bold; padding: 5px; }
-
-/* Responsividade */
-@media (max-width: 768px) {
-    .header-content { flex-direction: column; gap: 10px; }
-    .action-buttons { flex-direction: column; }
-    .grid-uniformes-container { justify-content: center; }
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--color-background);
+    color: var(--color-text);
+    margin: 0;
+    padding: 0;
 }
+
+/* Esconder tela principal antes do login */
+.hidden {
+    display: none !important;
+}
+
+/* --- Login Screen --- */
+#login-screen {
+    max-width: 350px;
+    margin: 100px auto;
+    padding: 30px;
+    background: white;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    text-align: center;
+}
+
+#login-screen input {
+    width: 90%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+
+#btn-login {
+    background-color: var(--color-primary);
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 15px;
+}
+
+/* --- Main Application Layout --- */
+#main-app {
+    padding: 20px;
+    max-width: 1400px; 
+    margin: 0 auto;
+}
+
+header h1 {
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: 10px;
+}
+
+/* --- Tabs / Abas (Gamelizadas) --- */
+#tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 3px solid #dee2e6;
+}
+
+.tab-button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    background-color: #e9ecef;
+    color: var(--color-text);
+    margin-right: 5px;
+    font-weight: bold;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.tab-button:hover:not(.active) {
+    background-color: #dee2e6;
+}
+
+.tab-button.active {
+    background-color: var(--color-primary);
+    color: white;
+    border-bottom: 3px solid var(--color-game-accent); /* Destaque gamificado */
+}
+
+/* --- Content Area --- */
+.tab-pane {
+    padding: 15px 0;
+}
+
+/* --- Botões de Ação (Abaixo das Abas) --- */
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.action-buttons button {
+    background-color: var(--color-primary);
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s;
+}
+
+.action-buttons button:hover {
+    background-color: var(--color-secondary);
+}
+
+/* Botão APAGAR (SUPERADMIN) */
+.action-buttons .btn-apagar-super {
+    background-color: var(--color-danger);
+}
+.action-buttons .btn-apagar-super:hover {
+    background-color: #a71d2a;
+}
+
+/* Botões desabilitados (para o perfil 'comum') */
+.action-buttons button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+
+/* --- Caixa de Listagem (Tabela) --- */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.data-table th, .data-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.data-table th {
+    background-color: var(--color-primary);
+    color: white;
+    font-weight: 600;
+}
+
+.data-table tr:hover {
+    background-color: #eaf4ff; 
+    cursor: pointer;
+}
+
+.data-table .selected-row {
+    background-color: #cce5ff !important; 
+    font-weight: bold;
+}
+
+/* --- Modal/Caixa de Diálogo --- */
+.modal {
+    display: none; 
+    position: fixed; 
+    z-index: 1000; 
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4); 
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 10% auto; 
+    padding: 30px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 500px;
+    border-radius: 10px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content input, .modal-content select {
+    width: 100%;
+    padding: 10px;
+    margin: 8px 0 15px 0;
+    display: inline-block;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+    border-radius: 4px;
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: space-between; 
+    margin-top: 20px;
+}
+
+.modal-buttons button {
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* Botão SIM é VERDE */
+#btn-confirmar-sim, #btn-restaurar-sim {
+    background-color: var(--color-success);
+    color: white;
+    border: none;
+}
+#btn-confirmar-sim:hover, #btn-restaurar-sim:hover {
+    background-color: #1e7e34;
+}
+
+/* Botão NÃO/Cancelar é VERMELHO */
+#btn-confirmar-nao, .btn-cancelar {
+    background-color: var(--color-danger); 
+    color: white;
+    border: none;
+}
+#btn-confirmar-nao:hover, .btn-cancelar:hover {
+    background-color: #bd2130;
+}
+
+.hidden {
+    display: none !important; 
+}
+
+
+/* --- ADIÇÕES PARA O SISTEMA V2 --- */
+
+/* Tags de Status para Pedidos e Patrimônio */
+.status-tag {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: white;
+    display: inline-block;
+}
+
+/* Cores dos Status de Pedido */
+.status-pendente { background-color: #ffc107; color: #333; } /* Amarelo */
+.status-em_separacao { background-color: #17a2b8; } /* Azul Ciano */
+.status-aguardando_retirada { background-color: #6f42c1; } /* Roxo */
+.status-em_transito { background-color: #fd7e14; } /* Laranja */
+.status-entregue { background-color: #28a745; } /* Verde */
+.status-cancelado { background-color: #dc3545; } /* Vermelho */
+
+/* Cores de Estado de Conservação */
+.conservacao-novo { background-color: #28a745; }
+.conservacao-bom { background-color: #17a2b8; }
+.conservacao-regular { background-color: #ffc107; color: #333; }
+.conservacao-danificado { background-color: #dc3545; }
+.conservacao-inservivel { background-color: #343a40; } /* Preto/Cinza escuro */
