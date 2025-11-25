@@ -194,13 +194,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // --- ABA HISTÓRICO ---
             else if (tabName === 'historico') {
-                const { data: res, error } = await supabase.from('historico_global')
-                    .select('id, data_movimentacao, tipo_movimento, quantidade, responsavel_nome, observacao, catalogo(nome, categoria, unidade_medida), usuario_id(email), unidade_destino_id(nome), unidade_origem_id(nome)')
-                    .order('data_movimentacao', { ascending: false }).limit(50);
+
+                const { data: res, error } = await supabase
+                    .from('historico_global')
+                    .select(`
+                        id,
+                        data_movimentacao,
+                        tipo_movimento,
+                        quantidade,
+                        observacao,
+                        responsavel_nome,
+                        usuario_sistema,
+                        catalogo:produto_id(nome, categoria, unidade_medida),
+                        unidades_destino:unidade_destino_id(nome)
+                    `)
+                    .order('data_movimentacao', { ascending: false })
+                    .limit(200);
+     
                 if (error) throw error;
+
                 data = res;
+
+                // ADICIONA coluna "Usuário"
+                data = data.map(r => ({
+                    ...r,
+                    usuario_nome: r.responsavel_nome ?? r.usuario_sistema ?? "—"
+                }));
+
                 html = renderTable('historico', data);
-            }            container.innerHTML = html;
+            }
             setupTableEvents(tabName, container);
 
         } catch (error) {
@@ -363,15 +385,58 @@ function renderActionButtons(tabName) {
             });
         }
         else if (tabName === 'patrimonio') {
-             // ...
+            headers = ['Plaqueta', 'Item', 'Local Atual', 'Conservação'];
+
+            data.forEach(r => {
+                const local = r.unidades?.nome || '<span style="color:red">Sem Local</span>';
+
+                let estadoDisplay = r.estado_conservacao;
+                let styleClass = '';
+                if (r.inservivel) {
+                    estadoDisplay = 'INSERVÍVEL (DESCARTE)';
+                    styleClass = 'background-color:#343a40;color:white;padding:4px 8px;border-radius:10px;font-size:0.85em;';
+                }
+
+                rows += `
+                    <tr data-id="${r.id}">
+                        <td>${r.codigo_patrimonio}</td>
+                        <td>${r.catalogo?.nome || '-'}</td>
+                        <td>${local}</td>
+                        <td><span style="${styleClass}">${estadoDisplay}</span></td>
+                    </tr>`;
+            });
         }
-        // ...
         else if (tabName === 'usuarios') {
-             // ...
+            headers = ['Email', 'Nome', 'Nível'];
+            data.forEach(r => {
+                rows += `
+                    <tr data-id="${r.id}">
+                        <td>${r.email}</td>
+                        <td>${r.nome_completo}</td>
+                        <td>${r.nivel_acesso}</td>
+                    </tr>`;
+            });
         }
-        // ...
+        
+        else if (tabName === 'unidades') {
+            headers = ['Nome', 'Responsável', 'Status'];
+            data.forEach(r => {        rows += `
+                    <tr data-id="${r.id}">
+                        <td>${r.nome}</td>
+                        <td>${r.responsavel || '-'}</td>
+                        <td>${r.status || '-'}</td>
+                    </tr>`;
+            });
+        }
+
         else if (tabName === 'categorias') {
-             // ...
+            headers = ['Nome da Categoria'];
+            data.forEach(r => {
+                rows += `
+                    <tr data-id="${r.id}">
+                        <td>${r.nome}</td>
+                    </tr>`;
+            });
         }
 
         return `<table class="data-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
@@ -1050,33 +1115,163 @@ function setupTableEvents(tabName, container) {
             alert('Movimentado!'); closeModal(); renderTab('patrimonio');
         };
     };
-
     window.renderMenuRelatorios = (container) => {
-        // Se a função for chamada via clique na aba (passando container)
-        // Se for chamada via JS sem argumentos, busca o tabContentArea
+  
         const target = container || document.getElementById('tab-content');
-        
-        // CÓDIGO ORIGINAL DO MENU DE RELATÓRIOS (Recuperado do seu arquivo)
+
         const html = `
-        <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; padding-top:20px;">
-            <div class="card-relatorio" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 250px; text-align: center;">
-                <i class="fas fa-exclamation-triangle" style="font-size: 3em; color: #dc3545; margin-bottom: 10px;"></i>
-                <h4>Estoque Baixo</h4><button onclick="window.gerarRelatorio('estoque_baixo')" style="background: var(--color-primary); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px;">Gerar PDF</button>
+        <div style="display:flex; flex-wrap:wrap; gap:20px; justify-content:center; padding-top:20px;">
+
+            <!-- ESTOQUE BAIXO -->
+            <div class="card-relatorio">
+                <i class="fas fa-exclamation-triangle icon-red"></i>
+                <h4>Estoque Baixo</h4>
+                <button onclick="window.gerarRelatorio('estoque_baixo')">Gerar PDF</button>
             </div>
-            <div class="card-relatorio" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 250px; text-align: center;">
-                <i class="fas fa-box-open" style="font-size: 3em; color: #fd7e14; margin-bottom: 10px;"></i>
-                <h4>Inventário Consumo</h4><button onclick="window.gerarRelatorio('consumo_total')" style="background: var(--color-primary); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px;">Gerar PDF</button>
+
+            <!-- INVENTÁRIO MATERIAL -->
+            <div class="card-relatorio">
+                <i class="fas fa-boxes icon-orange"></i>
+                <h4>Inventário Material</h4>
+                <button onclick="window.gerarRelatorio('inventario_material')">Gerar PDF</button>
             </div>
-        </div>`;
+
+            <!-- INVENTÁRIO PATRIMÔNIO -->
+            <div class="card-relatorio">
+                <i class="fas fa-laptop icon-blue"></i>
+                <h4>Inventário Patrimônio</h4>
+                <button onclick="window.gerarRelatorio('inventario_patrimonio')">Gerar PDF</button>
+            </div>
+
+            <!-- MOVIMENTAÇÕES POR PERÍODO -->
+            <div class="card-relatorio">
+                <i class="fas fa-history icon-gray"></i>
+                <h4>Movimentações (Período)</h4>
+                <button onclick="window.prepararRelatorioData('mov_periodo')">Selecionar</button>
+            </div>
+
+            <!-- ENTRADAS UNIFORMES -->
+            <div class="card-relatorio">
+                <i class="fas fa-tshirt icon-green"></i>
+                <h4>Entradas de Uniformes</h4>
+                <button onclick="window.prepararRelatorioData('uniforme_entradas')">Selecionar</button>
+            </div>
+
+            <!-- SAÍDAS UNIFORMES -->
+            <div class="card-relatorio">
+                <i class="fas fa-tshirt icon-red"></i>
+                <h4>Saídas de Uniformes</h4>
+                <button onclick="window.prepararRelatorioData('uniforme_saidas')">Selecionar</button>
+            </div>
+
+            <!-- ESTOQUE ATUAL UNIFORMES -->
+            <div class="card-relatorio">
+                <i class="fas fa-warehouse icon-blue"></i>
+                <h4>Estoque Atual Uniformes</h4>
+                <button onclick="window.gerarRelatorio('uniforme_estoque')">Gerar PDF</button>
+            </div>
+
+        </div>
+        `;
+
         target.innerHTML = html;
     };
+
 
     // FUNÇÕES AUXILIARES DE RELATORIO (Também no window)
     window.prepararRelatorioData = (t) => { modalContentArea.innerHTML = `<h3>Selecione o Período</h3><input type="date" id="rel-dt-ini"><input type="date" id="rel-dt-fim"><div class="modal-buttons"><button class="btn-cancelar" onclick="closeModal()">X</button><button class="btn-confirmar" onclick="window.gerarRelatorio('${t}', {dtIni:document.getElementById('rel-dt-ini').value, dtFim:document.getElementById('rel-dt-fim').value})">Gerar</button></div>`; modal.style.display='block'; }
     
     window.gerarRelatorio = async (tipo, params={}) => {
-        // ... (Copiar sua função gerarRelatorio original inteira aqui) ...
-        // Certifique-se de que ela está atribuída a window.gerarRelatorio = async ...
+        const { jsPDF } = window.jspdf; 
+        const doc = new jsPDF();
+        let head=[], body=[], title="";
+        
+        const dtIni = params.dtIni ? params.dtIni + ' 00:00:00' : null;
+        const dtFim = params.dtFim ? params.dtFim + ' 23:59:59' : null;
+
+        try {
+            if(tipo === 'estoque_baixo'){
+                title="Relatorio: Estoque Baixo"; 
+                head=[['Item','Categoria', 'Qtd Atual','Minimo']];
+                const {data} = await supabase.from('estoque_consumo')
+                    .select('quantidade_atual, catalogo(nome, estoque_minimo, categoria)');
+                
+                if(data) {
+                    body = data.filter(i => i.catalogo && i.quantidade_atual <= i.catalogo.estoque_minimo)
+                        .map(i => [i.catalogo.nome, i.catalogo.categoria, i.quantidade_atual, i.catalogo.estoque_minimo]);
+                }
+
+            } else if(tipo === 'patrimonio_total'){
+                title="Inventario Patrimonial (Ativos)"; 
+                head=[['Plaqueta','Item','Local', 'Estado']];
+                // Busca tudo
+                const {data, error} = await supabase.from('patrimonio')
+                    .select('codigo_patrimonio, estado_conservacao, inservivel, catalogo(nome), unidades!unidade_id(nome)');
+                if(error) throw error;
+                
+                // FILTRO: Apenas os que NÃO são inservíveis
+                body = data.filter(i => !i.inservivel)
+                           .map(i => [i.codigo_patrimonio, i.catalogo?.nome || '?', i.unidades?.nome || 'Sem Local', i.estado_conservacao]);
+
+            } else if(tipo === 'patrimonio_inservivel'){
+                // NOVO RELATÓRIO
+                title="Relatorio de Bens Inserviveis (Descarte)"; 
+                head=[['Plaqueta','Item','Ultimo Local', 'Status']];
+                
+                const {data, error} = await supabase.from('patrimonio')
+                    .select('codigo_patrimonio, estado_conservacao, inservivel, catalogo(nome), unidades!unidade_id(nome)');
+                if(error) throw error;
+                
+                // FILTRO: Apenas os que SÃO inservíveis
+                body = data.filter(i => i.inservivel)
+                           .map(i => [i.codigo_patrimonio, i.catalogo?.nome || '?', i.unidades?.nome || '-', 'INSERVIVEL']);
+
+            } else if(tipo === 'consumo_total'){
+                title="Inventario Geral de Consumo"; 
+                head=[['Produto','Qtd Total','Local Fisico']];
+                const {data} = await supabase.from('estoque_consumo').select('quantidade_atual, local_fisico, catalogo(nome)');
+                body = data.map(i => [i.catalogo?.nome || '?', i.quantidade_atual, i.local_fisico||'-']);
+
+            } else if(tipo === 'entradas'){
+                title=`Relatorio de Entradas (${params.dtIni} a ${params.dtFim})`;
+                head=[['Data', 'Item', 'Qtd', 'Obs']];
+                const {data} = await supabase.from('historico_global')
+                    .select('data_movimentacao, quantidade, observacao, catalogo(nome)')
+                    .ilike('tipo_movimento', '%entrada%')
+                    .gte('data_movimentacao', dtIni).lte('data_movimentacao', dtFim).order('data_movimentacao');
+
+                body = data.map(i => [new Date(i.data_movimentacao).toLocaleDateString(), i.catalogo?.nome || '?', i.quantidade, i.observacao || '-']);
+
+            } else if(tipo === 'saidas'){
+                title=`Relatorio de Saidas (${params.dtIni} a ${params.dtFim})`;
+                head=[['Data', 'Item', 'Qtd', 'Destino/Resp']];
+                const {data} = await supabase.from('historico_global')
+                    .select('data_movimentacao, quantidade, responsavel_nome, catalogo(nome)')
+                    .ilike('tipo_movimento', '%saida%')
+                    .gte('data_movimentacao', dtIni).lte('data_movimentacao', dtFim).order('data_movimentacao');
+
+                body = data.map(i => [new Date(i.data_movimentacao).toLocaleDateString(), i.catalogo?.nome || '?', i.quantidade, i.responsavel_nome || '-']);
+
+            } else if(tipo === 'saidas_local'){
+                title=`Saidas para: ${params.localNome} (${params.dtIni} a ${params.dtFim})`; 
+                head=[['Data','Item','Qtd', 'Resp']];
+                const {data} = await supabase.from('historico_global')
+                    .select('data_movimentacao, quantidade, responsavel_nome, catalogo(nome)')
+                    .eq('unidade_destino_id', params.localId)
+                    .ilike('tipo_movimento', '%saida%')
+                    .gte('data_movimentacao', dtIni).lte('data_movimentacao', dtFim);
+                
+                if(data) body = data.map(i => [new Date(i.data_movimentacao).toLocaleDateString(), i.catalogo?.nome || '?', i.quantidade, i.responsavel_nome || '-']);
+            }
+
+            if(!body || body.length === 0) { alert("Sem dados para este relatorio."); return; }
+
+            doc.text(title, 10, 10);
+            doc.autoTable({head: head, body: body, startY: 15, theme: 'grid'});
+            doc.save(`relatorio_${tipo}.pdf`);
+            closeModal();
+
+        } catch(e) { console.error(e); alert("Erro ao gerar PDF: " + e.message); }
     };
     // Calculadora e Relatórios permanecem na tela principal conforme solicitado
     window.renderCalculadora = (container) => {
