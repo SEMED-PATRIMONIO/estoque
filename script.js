@@ -16,38 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainApp = document.getElementById('main-app');
     const btnLogin = document.getElementById('btn-login');
     const btnLogout = document.getElementById('btn-logout');
-    const btnConfig = document.getElementById('btn-config');
-
-    if(btnConfig) {
-      btnConfig.addEventListener('click', async () => {
-        // iremos renderizar as abas de Configurações dentro do modal (reaproveita renderTable)
-        modalContentArea.innerHTML = '<h3><i class="fas fa-cog"></i> Configurações</h3><div id="config-tabs" style="display:flex; gap:8px; margin-bottom:12px;"><button class="cfg-btn" data-cfg="catalogo">Catálogo</button><button class="cfg-btn" data-cfg="unidades">Locais</button><button class="cfg-btn" data-cfg="categorias">Categorias</button><button class="cfg-btn" data-cfg="usuarios">Usuários</button></div><div id="config-area">Carregando...</div><div style="margin-top:12px;"><button class="btn-cancelar" onclick="closeModal()">Fechar</button></div>';
-        modal.style.display = 'block';
-
-        // attach events
-        document.querySelectorAll('.cfg-btn').forEach(b => b.addEventListener('click', async (e) => {
-          const cfg = e.target.dataset.cfg;
-          // reutiliza renderTable: chamamos as queries diretamente aqui
-          const container = document.getElementById('config-area');
-          container.innerHTML = '<div style="padding:20px;">Carregando...</div>';
-          try {
-            if(cfg === 'catalogo') {
-              const { data } = await supabase.from('catalogo').select('*').order('nome');
-              container.innerHTML = renderTable('catalogo', data);
-            } else if(cfg === 'unidades') {
-              const { data } = await supabase.from('unidades').select('*').order('nome');
-              container.innerHTML = renderTable('unidades', data);
-            } else if(cfg === 'categorias') {
-              const { data } = await supabase.from('categorias').select('*').order('nome');
-              container.innerHTML = renderTable('categorias', data);
-            } else if(cfg === 'usuarios') {
-              const { data } = await supabase.from('usuarios').select('*').order('nome_completo');
-              container.innerHTML = renderTable('usuarios', data);
-            }
-          } catch(err) { container.innerHTML = '<p style="color:red;">Erro ao carregar</p>'; console.error(err); }
-        }));
-      });
-    }
     const tabsContainer = document.getElementById('tabs');
     const tabContentArea = document.getElementById('tab-content');
     const modal = document.getElementById('global-modal');
@@ -129,102 +97,46 @@ document.addEventListener('DOMContentLoaded', () => {
         let html = '';
 
         try {
-
             if (tabName === 'catalogo') {
                 const { data: res } = await supabase.from('catalogo').select('*').order('nome');
                 data = res;
-            }
-
+            } 
             else if (tabName === 'estoque_consumo') {
-                // não deve ser mais chamado pela UI, mantido por compatibilidade
                 const { data: res } = await supabase.from('estoque_consumo')
-                    .select('id, quantidade_atual, local_fisico, catalogo(nome, unidade_medida, estoque_minimo, categoria)')
-                    .order('id');
-                if (res) {
-                    data = res.sort((a, b) =>
-                        (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || '')
-                    );
-                }
-            }
-
+                    .select('id, quantidade_atual, local_fisico, catalogo(nome, unidade_medida, estoque_minimo)').order('id');
+                // ORDENAÇÃO ALFABÉTICA
+                if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
+            } 
             else if (tabName === 'historico') {
                 const { data: res } = await supabase.from('historico_global')
                     .select('id, data_movimentacao, tipo_movimento, quantidade, responsavel_nome, observacao, catalogo(nome, categoria, unidade_medida), unidades!unidade_destino_id(nome)')
-                    .order('data_movimentacao', { ascending: false })
-                    .limit(50);
+                    .order('data_movimentacao', { ascending: false }).limit(50);
                 data = res;
             }
-
-            else if (tabName === 'material') {
-                // Consumo EXCETO UNIFORMES
-                const { data: res } = await supabase.from('estoque_consumo')
-                    .select('id, quantidade_atual, local_fisico, catalogo(nome, unidade_medida, estoque_minimo, categoria)')
-                    .order('id');
-
-                if (res) {
-                    data = res
-                        .filter(r => (r.catalogo?.categoria || '').toUpperCase() !== 'UNIFORMES ESCOLARES')
-                        .sort((a, b) =>
-                            (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || '')
-                        );
-                }
-            }
-
-            else if (tabName === 'uniformes') {
-                // Somente UNIFORMES
-                const { data: res } = await supabase.from('estoque_consumo')
-                    .select('id, quantidade_atual, local_fisico, catalogo(id, nome, unidade_medida, estoque_minimo, categoria, tipo)')
-                    .order('id');
-
-                if (res) {
-                    data = res
-                        .filter(r => (r.catalogo?.categoria || '').toUpperCase() === 'UNIFORMES ESCOLARES')
-                        .sort((a, b) =>
-                            (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || '')
-                        );
-                }
-            }
-
             else if (tabName === 'patrimonio') {
                 const { data: res } = await supabase.from('patrimonio')
                     .select('id, codigo_patrimonio, estado_conservacao, inservivel, catalogo(nome), unidades:unidade_id(nome)');
-
-                if (res) {
-                    data = res.sort((a, b) =>
-                        (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || '')
-                    );
-                }
-            }
-
+                // ORDENAÇÃO ALFABÉTICA
+                if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
+            } 
             else if (tabName === 'pedidos') {
                 const { data: res } = await supabase.from('pedidos')
-                    .select('id, status, data_solicitacao, unidades(nome)')
-                    .order('data_solicitacao', { ascending: false });
+                    .select('id, status, data_solicitacao, unidades(nome)').order('data_solicitacao', { ascending: false });
                 data = res;
-            }
-
+            } 
             else if (tabName === 'unidades') {
-                const { data: res } = await supabase.from('unidades')
-                    .select('*')
-                    .order('nome');
+                const { data: res } = await supabase.from('unidades').select('*').order('nome');
                 data = res;
             }
-
             else if (tabName === 'categorias') {
-                const { data: res } = await supabase.from('categorias')
-                    .select('*')
-                    .order('nome');
+                const { data: res } = await supabase.from('categorias').select('*').order('nome');
                 data = res;
             }
-
             else if (tabName === 'usuarios') {
-                const { data: res } = await supabase.from('usuarios')
-                    .select('*')
-                    .order('nome_completo');
+                const { data: res } = await supabase.from('usuarios').select('*').order('nome_completo');
                 data = res;
             }
 
-            // renderização final
             html += renderActionButtons(tabName);
             html += renderTable(tabName, data);
             tabContentArea.innerHTML = html;
@@ -245,15 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 btns += `<button id="btn-novo-item"><i class="fas fa-plus"></i> Cadastrar Item</button>`;
                 btns += `<button id="btn-entrada-geral" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Nova Entrada</button>`;
             }
-            if (tabName === 'material') {
-                btns += `<button id="btn-entrada-consumo" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada (Material)</button>`;
-                btns += `<button id="btn-saida-rapida" style="background-color: #ffc107; color: #333;"><i class="fas fa-arrow-up"></i> Saída Rápida</button>`;
-            }
-            if (tabName === 'uniformes') {
-                // entrada/saída por grade
-                btns += `<button id="btn-entrada-uniforme" style="background-color:#28a745;"><i class="fas fa-arrow-down"></i> Entrada (Grade)</button>`;
-                btns += `<button id="btn-saida-uniforme" style="background-color:#ffc107; color:#333;"><i class="fas fa-arrow-up"></i> Saída (Grade)</button>`;
-            }
             if (tabName === 'estoque_consumo') {
                 btns += `<button id="btn-entrada-consumo" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Consumo</button>`;
                 btns += `<button id="btn-saida-rapida" style="background-color: #ffc107; color: #333;"><i class="fas fa-arrow-up"></i> Saída Rápida</button>`;
@@ -264,7 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 btns += `<button id="btn-marcar-inservivel" style="background-color: #343a40; color: white;"><i class="fas fa-trash-alt"></i> Baixar (Inservível)</button>`;
             }
             if (tabName === 'unidades') btns += `<button id="btn-nova-unidade"><i class="fas fa-building"></i> Nova Unidade</button>`;
-
             if (tabName === 'categorias') btns += `<button id="btn-nova-categoria"><i class="fas fa-tags"></i> Nova Categoria</button>`;
         }
         
@@ -373,8 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
-        document.getElementById('btn-entrada-uniforme')?.addEventListener('click', () => openModalEntradaGrade());
-        document.getElementById('btn-saida-uniforme')?.addEventListener('click', () => openModalSaidaGrade());
+        
         document.getElementById('btn-novo-item')?.addEventListener('click', () => openModalCadastro('catalogo'));
         document.getElementById('btn-nova-unidade')?.addEventListener('click', () => openModalCadastro('unidades'));
         document.getElementById('btn-nova-categoria')?.addEventListener('click', () => openModalCadastro('categorias')); 
@@ -522,88 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (tipo === 'categorias') await supabase.from('categorias').insert([{ nome: nome }]);
 
             alert('Salvo com sucesso!'); closeModal(); renderTab(activeTab);
-        };
-    }
-
-    // helpers: tamanhos por tipo (ajuste conforme sua realidade)
-    const TAMANHOS_ROUPA = ['RN','P','M','G','EG','10','12','14','16']; // exemplo: creche -> 0-10 etc
-    const TAMANHOS_CALCADO = ['20','21','22','23','24','25','26','27','28','29','30'];
-
-    async function openModalEntradaGrade() {
-        // busca catalogo filtrando uniformes
-        const { data: produtos } = await supabase.from('catalogo').select('id, nome, categoria, tipo').eq('categoria', 'UNIFORMES ESCOLARES').order('nome');
-        if(!produtos || produtos.length===0) return alert('Nenhum uniforme cadastrado.');
-
-        const html = `<h3>Entrada por Grade (Uniformes)</h3>
-          <label>Produto:</label>
-          <select id="grade-prod">${produtos.map(p=>`<option value="${p.id}" data-tipo="${p.tipo}">${p.nome}</option>`).join('')}</select>
-          <div id="grade-area" style="margin-top:10px;"></div>
-          <label>Observação:</label><input id="grade-obs" placeholder="Ex: Nota / Lote">
-          <div class="modal-buttons"><button class="btn-cancelar" onclick="closeModal()">Cancelar</button><button class="btn-confirmar" id="btn-conf-grade-ent">Confirmar</button></div>`;
-        modalContentArea.innerHTML = html; modal.style.display='block';
-
-        const sel = document.getElementById('grade-prod');
-        function renderGrade() {
-            const tipo = sel.options[sel.selectedIndex].dataset.tipo || 'roupa';
-            const use = (tipo && tipo.toLowerCase().includes('calçado')) ? TAMANHOS_CALCADO : TAMANHOS_ROUPA;
-            document.getElementById('grade-area').innerHTML = use.map(t=>`<div style="display:flex; gap:8px; align-items:center;"><label style="width:60px">${t}</label><input type="number" min="0" value="0" data-tamanho="${t}" class="inp-tam"></div>`).join('');
-        }
-        sel.addEventListener('change', renderGrade);
-        renderGrade();
-
-        document.getElementById('btn-conf-grade-ent').onclick = async () => {
-            const prodId = sel.value;
-            const obs = document.getElementById('grade-obs').value || '';
-            const inputs = Array.from(document.querySelectorAll('.inp-tam'));
-            const changes = inputs.map(i => ({ tamanho: i.dataset.tamanho, qtd: parseInt(i.value)||0 })).filter(x=>x.qtd>0);
-            if(!changes.length) return alert('Informe pelo menos 1 quantidade.');
-
-            try {
-                // atualizar estoque_tamanhos e estoque_consumo
-                for(const ch of changes) {
-                    const { data: exists } = await supabase.from('estoque_tamanhos').select('*').eq('produto_id', prodId).eq('tamanho', ch.tamanho).single();
-                    if(exists) {
-                        await supabase.from('estoque_tamanhos').update({ quantidade: exists.quantidade + ch.qtd }).eq('id', exists.id);
-                    } else {
-                        await supabase.from('estoque_tamanhos').insert([{ produto_id: prodId, tamanho: ch.tamanho, quantidade: ch.qtd }]);
-                    }
-                }
-                // atualiza estoque_consumo soma total
-                const { data: allSizes } = await supabase.from('estoque_tamanhos').select('sum(quantidade)').eq('produto_id', prodId);
-                // sum via supabase client isn't always straightforward; em alternativa recalcular localmente:
-                const { data: sizesNow } = await supabase.from('estoque_tamanhos').select('quantidade').eq('produto_id', prodId);
-                const total = sizesNow.reduce((s,i)=>s + (i.quantidade||0), 0);
-                const { data: existTotal } = await supabase.from('estoque_consumo').select('*').eq('produto_id', prodId).single();
-                if(existTotal) await supabase.from('estoque_consumo').update({ quantidade_atual: total }).eq('id', existTotal.id);
-                else await supabase.from('estoque_consumo').insert([{ produto_id: prodId, quantidade_atual: total }]);
-
-                // registrar historico_global e historico_tamanhos
-                // 1) grava resumo no historico_global
-                const obsResumo = `Entrada por grade. ${obs} | Detalhe: ${JSON.stringify(changes)}`;
-                const { data: hg } = await supabase.from('historico_global').insert([{
-                    produto_id: prodId,
-                    quantidade: changes.reduce((a,b)=>a+b.qtd,0),
-                    tipo_movimento: 'entrada_tamanhos',
-                    observacao: obsResumo,
-                    responsavel_nome: 'Almoxarifado',
-                    usuario_sistema: currentUserId,
-                    data_movimentacao: new Date()
-                }]).select().single();
-
-                // 2) gravar registros por tamanho relacionando historico_global_id
-                for(const ch of changes) {
-                    await supabase.from('historico_tamanhos').insert([{
-                        historico_global_id: hg.id,
-                        produto_id: prodId,
-                        tamanho: ch.tamanho,
-                        quantidade: ch.qtd,
-                        tipo_movimento: 'entrada_tamanhos',
-                        responsavel_nome: 'Almoxarifado'
-                    }]);
-                }
-
-                alert('Entrada por grade registrada.'); closeModal(); renderTab(activeTab);
-            } catch(e) { console.error(e); alert('Erro: ' + e.message); }
         };
     }
 
@@ -758,91 +577,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("Pedido criado!"); closeModal(); renderTab('pedidos');
         };
     }
-
-    async function openModalSaidaGrade() {
-        const { data: produtos } = await supabase.from('catalogo').select('id, nome, categoria, tipo').eq('categoria','UNIFORMES ESCOLARES').order('nome');
-        if(!produtos || produtos.length===0) return alert('Nenhum uniforme cadastrado.');
-        const html = `<h3>Saída por Grade (Uniformes)</h3>
-          <label>Produto:</label>
-          <select id="grade-prod-out">${produtos.map(p=>`<option value="${p.id}" data-tipo="${p.tipo}">${p.nome}</option>`).join('')}</select>
-          <div id="grade-area-out" style="margin-top:10px;"></div>
-          <label>Responsável/Unidade:</label><input id="grade-resp" placeholder="Nome / Setor">
-          <label>Observação:</label><input id="grade-obs-out" placeholder="Ex: Entrega a unidade X">
-          <div class="modal-buttons"><button class="btn-cancelar" onclick="closeModal()">Cancelar</button><button class="btn-confirmar" id="btn-conf-grade-out">Confirmar Saída</button></div>`;
-        modalContentArea.innerHTML = html; modal.style.display='block';
-
-        const sel = document.getElementById('grade-prod-out');
-        function renderGradeOut() {
-        const tipo = sel.options[sel.selectedIndex].dataset.tipo || 'roupa';
-        const use = (tipo && tipo.toLowerCase().includes('calçado')) ? TAMANHOS_CALCADO : TAMANHOS_ROUPA;
-        // busca saldo atual por tamanho e monta inputs com max
-        (async () => {
-            const prodId = sel.value;
-            const { data: saldos } = await supabase.from('estoque_tamanhos').select('tamanho, quantidade').eq('produto_id', prodId);
-            const mapS = {};
-            (saldos||[]).forEach(s => mapS[s.tamanho] = s.quantidade);
-            document.getElementById('grade-area-out').innerHTML = use.map(t=>`<div style="display:flex; gap:8px; align-items:center;"><label style="width:60px">${t}</label><input type="number" min="0" value="0" data-tamanho="${t}" class="inp-tam-out" max="${mapS[t]||0}"><small style="color:#666;margin-left:8px;">Saldo: ${mapS[t]||0}</small></div>`).join('');
-        })();
-    }
-    sel.addEventListener('change', renderGradeOut);
-    renderGradeOut();
-
-    document.getElementById('btn-conf-grade-out').onclick = async () => {
-        const prodId = sel.value;
-        const resp = document.getElementById('grade-resp').value || 'Desconhecido';
-        const obs = document.getElementById('grade-obs-out').value || '';
-        const inputs = Array.from(document.querySelectorAll('.inp-tam-out'));
-        const changes = inputs.map(i => ({ tamanho: i.dataset.tamanho, qtd: parseInt(i.value)||0 })).filter(x=>x.qtd>0);
-        if(!changes.length) return alert('Informe pelo menos 1 quantidade.');
-
-        try {
-            // checar saldo e subtrair
-            for(const ch of changes) {
-                const { data: exists } = await supabase.from('estoque_tamanhos').select('*').eq('produto_id', prodId).eq('tamanho', ch.tamanho).single();
-                const atual = exists ? (exists.quantidade||0) : 0;
-                if(ch.qtd > atual) return alert(`Saldo insuficiente para tamanho ${ch.tamanho}. Saldo: ${atual}`);
-            }
-            // atualizar quantidades
-            for(const ch of changes) {
-                const { data: exists } = await supabase.from('estoque_tamanhos').select('*').eq('produto_id', prodId).eq('tamanho', ch.tamanho).single();
-                const novo = (exists.quantidade||0) - ch.qtd;
-                await supabase.from('estoque_tamanhos').update({ quantidade: novo }).eq('id', exists.id);
-            }
-            // recalcular total
-            const { data: sizesNow } = await supabase.from('estoque_tamanhos').select('quantidade').eq('produto_id', prodId);
-            const total = sizesNow.reduce((s,i)=>s + (i.quantidade||0), 0);
-            const { data: existTotal } = await supabase.from('estoque_consumo').select('*').eq('produto_id', prodId).single();
-            if(existTotal) await supabase.from('estoque_consumo').update({ quantidade_atual: total }).eq('id', existTotal.id);
-            else await supabase.from('estoque_consumo').insert([{ produto_id: prodId, quantidade_atual: total }]);
-
-            // registrar historico_global e historico_tamanhos
-                const obsResumo = `Saída por grade. ${obs} | Detalhe: ${JSON.stringify(changes)}`;
-                const { data: hg } = await supabase.from('historico_global').insert([{
-                    produto_id: prodId,
-                    quantidade: changes.reduce((a,b)=>a+b.qtd,0),
-                    tipo_movimento: 'saida_tamanhos',
-                    observacao: obsResumo,
-                    responsavel_nome: resp,
-                    usuario_sistema: currentUserId,
-                    data_movimentacao: new Date()
-                }]).select().single();
-
-                for(const ch of changes) {
-                    await supabase.from('historico_tamanhos').insert([{
-                        historico_global_id: hg.id,
-                        produto_id: prodId,
-                        tamanho: ch.tamanho,
-                        quantidade: ch.qtd,
-                        tipo_movimento: 'saida_tamanhos',
-                        responsavel_nome: resp
-                    }]);
-                }
-
-                alert('Saída por grade registrada.'); closeModal(); renderTab(activeTab);
-            } catch(e) { console.error(e); alert('Erro: ' + e.message); }
-        };
-    }
-
 
     function renderCalculadora() {
         const html = `
