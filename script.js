@@ -522,8 +522,8 @@ window.openModalAddCatalogo = async function() {
             <select id="novo-tipo" style="width:100%">
                 <option value="consumo">Consumo (Material de Escritório, Limpeza...)</option>
                 <option value="permanente">Permanente (Móveis, Eletrônicos...)</option>
-                <option value="uniformes_roupas">Uniformes Roupas</option>
-                <option value="uniformes_calcados">Uniformes Calçados</option>
+                <option value="UNIFORMES ROUPAS">Uniformes Roupas</option>
+                <option value="UNIFORMES CALÇADOS">Uniformes Calçados</option>
             </select>
             
             <label>Categoria:</label>
@@ -725,7 +725,8 @@ window.deleteGeneric = async function(table, id) {
 
 // Lógica de sincronização com estoque
 async function criarProdutoNoEstoque(produto) {
-    if (produto.tipo === "CONSUMO") {
+    // CORREÇÃO: Verifica se é 'consumo' (minúsculo) OU 'CONSUMO' (maiúsculo)
+    if (produto.tipo === "consumo" || produto.tipo === "CONSUMO") {
         await supabase.from("estoque_consumo").insert([{ produto_id: produto.id, quantidade_atual: 0 }]);
     }
     // Para uniformes, cria a grade de tamanhos
@@ -1163,67 +1164,262 @@ window.confirmarMovPatrimonio = async function() {
 }
 
 // PEDIDOS
+// 1. Abrir Modal de Criação (Permite selecionar vários itens)
 window.openModalCriarPedido = async function() {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
     
-    // Limpa lista temporária
+    // Reseta lista temporária
     itensPedidoTemporario = [];
 
-    content.innerHTML = '<p>Carregando dados...</p>';
+    content.innerHTML = '<p style="padding:20px; text-align:center;">Carregando produtos e locais...</p>';
     modal.style.display = 'block';
 
-    // 1. Busca Locais e Produtos (Exceto Permanentes)
-    const { data: locais } = await supabase.from('unidades').select('*').order('nome');
-    const { data: produtos } = await supabase.from('catalogo')
-        .select('*')
-        .neq('tipo', 'PERMANENTE') // Filtra fora os patrimônios
-        .order('nome');
-
-    // 2. Monta o HTML
-    let html = `
-        <h3><i class="fas fa-cart-plus"></i> Novo Pedido</h3>
+    try {
+        const { data: locais } = await supabase.from('unidades').select('*').order('nome');
         
-        <div style="background:#f8fafc; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #e2e8f0;">
-            <label><strong>1. Destino do Pedido:</strong></label>
-            <select id="ped-destino" style="width:100%; margin-bottom:0;">
-                <option value="">Selecione o Local Solicitante...</option>
-                ${locais.map(l => `<option value="${l.id}">${l.nome}</option>`).join('')}
-            </select>
-        </div>
+        // Busca todos os produtos ativos que não são permanentes
+        const { data: produtos, error } = await supabase.from('catalogo')
+            .select('*')
+            .neq('tipo', 'permanente') 
+            .eq('ativo', true)
+            .order('nome');
 
-        <div style="background:#f0f9ff; padding:15px; border-radius:8px; border:1px solid #bae6fd;">
-            <label><strong>2. Adicionar Itens:</strong></label>
-            <div style="display:flex; gap:10px;">
-                <select id="ped-prod-select" onchange="window.verificarOpcoesProduto()" style="flex:2">
-                    <option value="">Selecione o Produto...</option>
-                    ${produtos.map(p => `<option value="${p.id}" data-tipo="${p.tipo}" data-nome="${p.nome}">${p.nome}</option>`).join('')}
+        if (error) throw error;
+
+        // SEPARAÇÃO DOS PRODUTOS EM ARRAYS
+        const roupas = produtos.filter(p => p.tipo === 'UNIFORMES ROUPAS');
+        const calcados = produtos.filter(p => p.tipo === 'UNIFORMES CALÇADOS');
+        // Filtra tanto maiúsculo quanto minúsculo para garantir
+        const materiais = produtos.filter(p => p.tipo === 'CONSUMO' || p.tipo === 'consumo');
+
+        let html = `
+            <h3><i class="fas fa-cart-plus"></i> Novo Pedido de Saída</h3>
+            
+            <div style="background:#f8fafc; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #e2e8f0;">
+                <label><strong>1. Destino da Mercadoria:</strong></label>
+                <select id="ped-destino" style="width:100%; margin-bottom:0;">
+                    <option value="">Selecione o Local / Unidade...</option>
+                    ${locais.map(l => `<option value="${l.id}">${l.nome}</option>`).join('')}
                 </select>
-                <select id="ped-tam-select" style="flex:1; display:none;">
-                    <option value="">Tam.</option>
-                </select>
-                <input type="number" id="ped-qtd-input" placeholder="Qtd" min="1" style="width:80px;">
-                <button onclick="window.adicionarItemLista()" style="background:#3b82f6;"><i class="fas fa-plus"></i></button>
             </div>
-            <small id="ped-estoque-msg" style="color:#64748b; font-weight:bold; display:block; margin-top:5px;">Selecione um produto para ver o estoque.</small>
-        </div>
 
-        <div style="margin-top:15px;">
-            <table class="data-table" style="font-size:0.9em;">
-                <thead><tr><th>Produto</th><th>Det.</th><th>Qtd</th><th>Ação</th></tr></thead>
-                <tbody id="lista-itens-pedido">
-                    <tr><td colspan="4" style="text-align:center; color:#999;">Nenhum item adicionado.</td></tr>
-                </tbody>
-            </table>
-        </div>
+            <div style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
+                
+                <div class="pedido-section" style="border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+                    <h4 style="margin-top:0; color: #0284c7;"><i class="fas fa-tshirt"></i> 1. Uniformes - Roupas</h4>
+                    <div style="display:flex; gap:5px; align-items:flex-end;">
+                        <div style="flex:3;">
+                            <small>Produto:</small>
+                            <select id="sel-roupa-prod" onchange="window.verificarEstoqueSimples('roupa')" style="width:100%; margin-bottom:0">
+                                <option value="">Selecione a Roupa...</option>
+                                ${roupas.map(p => `<option value="${p.id}" data-nome="${p.nome}">${p.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="flex:1.5;">
+                            <small>Tam:</small>
+                            <select id="sel-roupa-tam" style="width:100%; margin-bottom:0">
+                                <option value="">-</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <small>Qtd:</small>
+                            <input type="number" id="qtd-roupa" min="1" placeholder="0" style="margin-bottom:0">
+                        </div>
+                        <button onclick="window.adicionarItemAoPedido('roupa')" style="background:#0284c7; color:white; height:38px; width:40px;"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <small id="msg-estoque-roupa" style="color:#64748b; font-weight:bold; display:block; margin-top:5px;">Estoque: -</small>
+                </div>
 
-        <div style="margin-top:20px; text-align:right; border-top:1px solid #eee; padding-top:10px;">
-            <button class="btn-cancelar" onclick="window.closeModal()" style="margin-right:10px;">Cancelar</button>
-            <button class="btn-confirmar" onclick="window.salvarPedidoCompleto()">Concluir Pedido</button>
-        </div>
-    `;
+                <div class="pedido-section" style="border: 1px solid #cbd5e1; background: #f1f5f9; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+                    <h4 style="margin-top:0; color: #475569;"><i class="fas fa-shoe-prints"></i> 2. Uniformes - Calçados</h4>
+                    <div style="display:flex; gap:5px; align-items:flex-end;">
+                        <div style="flex:3;">
+                            <small>Produto:</small>
+                            <select id="sel-calcado-prod" onchange="window.verificarEstoqueSimples('calcado')" style="width:100%; margin-bottom:0">
+                                <option value="">Selecione o Calçado...</option>
+                                ${calcados.map(p => `<option value="${p.id}" data-nome="${p.nome}">${p.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="flex:1.5;">
+                            <small>Num:</small>
+                            <select id="sel-calcado-tam" style="width:100%; margin-bottom:0">
+                                <option value="">-</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <small>Qtd:</small>
+                            <input type="number" id="qtd-calcado" min="1" placeholder="0" style="margin-bottom:0">
+                        </div>
+                        <button onclick="window.adicionarItemAoPedido('calcado')" style="background:#475569; color:white; height:38px; width:40px;"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <small id="msg-estoque-calcado" style="color:#64748b; font-weight:bold; display:block; margin-top:5px;">Estoque: -</small>
+                </div>
+
+                <div class="pedido-section" style="border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+                    <h4 style="margin-top:0; color: #15803d;"><i class="fas fa-box-open"></i> 3. Material de Consumo</h4>
+                    <div style="display:flex; gap:5px; align-items:flex-end;">
+                        <div style="flex:4;">
+                            <small>Produto:</small>
+                            <select id="sel-consumo-prod" onchange="window.verificarEstoqueSimples('consumo')" style="width:100%; margin-bottom:0">
+                                <option value="">Selecione o Material...</option>
+                                ${materiais.map(p => `<option value="${p.id}" data-nome="${p.nome}">${p.nome}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <small>Qtd:</small>
+                            <input type="number" id="qtd-consumo" min="1" placeholder="0" style="margin-bottom:0">
+                        </div>
+                        <button onclick="window.adicionarItemAoPedido('consumo')" style="background:#15803d; color:white; height:38px; width:40px;"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <small id="msg-estoque-consumo" style="color:#64748b; font-weight:bold; display:block; margin-top:5px;">Estoque: -</small>
+                </div>
+
+            </div>
+
+            <div style="margin-top:15px;">
+                <table class="data-table" style="font-size:0.9em;">
+                    <thead><tr><th>Produto</th><th>Tam/Num</th><th>Qtd</th><th>Ação</th></tr></thead>
+                    <tbody id="lista-itens-pedido">
+                        <tr><td colspan="4" style="text-align:center; color:#999;">Nenhum item adicionado.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:20px; text-align:right; border-top:1px solid #eee; padding-top:10px;">
+                <button class="btn-cancelar" onclick="window.closeModal()" style="margin-right:10px;">Cancelar</button>
+                <button class="btn-confirmar" onclick="window.salvarPedidoCompleto()">Confirmar Pedido</button>
+            </div>
+        `;
+        content.innerHTML = html;
+    } catch (error) {
+        console.error(error); 
+        content.innerHTML = `<p style="color:red; padding:20px; text-align:center">Erro ao carregar dados: ${error.message}</p>`;
+    }
+}
+
+// Função Auxiliar para verificar estoque e preencher tamanhos dinamicamente
+window.verificarEstoqueSimples = async function(tipo) {
+    const prodSelect = document.getElementById(`sel-${tipo}-prod`);
+    const prodId = prodSelect.value;
+    const msgElement = document.getElementById(`msg-estoque-${tipo}`);
     
-    content.innerHTML = html;
+    if (!prodId) {
+        msgElement.innerText = "Estoque: -";
+        return;
+    }
+
+    msgElement.innerText = "Verificando...";
+
+    if (tipo === 'consumo') {
+        // Lógica Consumo (sem tamanho)
+        const { data } = await supabase.from('estoque_consumo').select('quantidade_atual').eq('produto_id', prodId).single();
+        const qtd = data ? data.quantidade_atual : 0;
+        msgElement.innerText = `Disponível: ${qtd}`;
+        prodSelect.dataset.max = qtd;
+    } 
+    else {
+        // Lógica Roupas ou Calçados (com tamanho)
+        const tamSelect = document.getElementById(`sel-${tipo}-tam`);
+        tamSelect.innerHTML = '<option value="">Carregando...</option>';
+        
+        const { data: tams } = await supabase.from('estoque_tamanhos')
+            .select('tamanho, quantidade')
+            .eq('produto_id', prodId)
+            // Se quiser ordenar tamanhos, pode precisar de logica extra, aqui ordena pela criação ou string
+            .order('id'); 
+            
+        if (tams && tams.length > 0) {
+            tamSelect.innerHTML = '<option value="">Sel.</option>';
+            tams.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.tamanho;
+                opt.text = `${t.tamanho} (Disp: ${t.quantidade})`;
+                opt.dataset.qtd = t.quantidade;
+                tamSelect.appendChild(opt);
+            });
+            msgElement.innerText = "Selecione o tamanho.";
+            
+            // Evento ao mudar o tamanho para atualizar max
+            tamSelect.onchange = function() {
+                const q = this.options[this.selectedIndex].dataset.qtd || 0;
+                msgElement.innerText = `Disponível neste tamanho: ${q}`;
+            };
+        } else {
+            tamSelect.innerHTML = '<option value="">Sem estoque</option>';
+            msgElement.innerText = "Sem grade cadastrada.";
+        }
+    }
+}
+
+// Função unificada para adicionar itens das 3 seções
+window.adicionarItemAoPedido = function(tipo) {
+    const prodSelect = document.getElementById(`sel-${tipo}-prod`);
+    const qtdInput = document.getElementById(`qtd-${tipo}`);
+    const prodId = prodSelect.value;
+    const prodNome = prodSelect.options[prodSelect.selectedIndex]?.dataset.nome;
+    const qtd = parseInt(qtdInput.value);
+    
+    let tamanho = null;
+    let estoqueMax = 0;
+
+    if (!prodId) return alert("Selecione um produto.");
+    if (!qtd || qtd <= 0) return alert("Quantidade inválida.");
+
+    if (tipo === 'consumo') {
+        estoqueMax = parseInt(prodSelect.dataset.max) || 0;
+    } else {
+        const tamSelect = document.getElementById(`sel-${tipo}-tam`);
+        tamanho = tamSelect.value;
+        if (!tamanho) return alert("Selecione o tamanho/número.");
+        estoqueMax = parseInt(tamSelect.options[tamSelect.selectedIndex].dataset.qtd) || 0;
+    }
+
+    if (qtd > estoqueMax) return alert(`Quantidade indisponível! Máximo: ${estoqueMax}`);
+
+    // Adiciona ao array global
+    itensPedidoTemporario.push({
+        produto_id: prodId,
+        nome: prodNome,
+        tipo_interno: tipo, // 'roupa', 'calcado', 'consumo'
+        tipo_produto: (tipo === 'consumo' ? 'CONSUMO' : 'UNIFORME'), // Para controle de baixa
+        tamanho: tamanho,
+        quantidade: qtd
+    });
+
+    renderizarListaItensPedido();
+    
+    // Limpa campos para nova inserção
+    qtdInput.value = "";
+    if(tipo !== 'consumo') document.getElementById(`sel-${tipo}-tam`).value = "";
+    document.getElementById(`msg-estoque-${tipo}`).innerText = "Item adicionado.";
+}
+
+// Renderização da tabela permanece a mesma
+function renderizarListaItensPedido() {
+    const tbody = document.getElementById("lista-itens-pedido");
+    if (itensPedidoTemporario.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999;">Nenhum item.</td></tr>';
+        return;
+    }
+    
+    let html = "";
+    itensPedidoTemporario.forEach((item, index) => {
+        html += `
+            <tr>
+                <td>${item.nome}</td>
+                <td>${item.tamanho || '-'}</td>
+                <td>${item.quantidade}</td>
+                <td><button class="btn-cancelar" onclick="removerItemLista(${index})" style="padding:2px 8px;">X</button></td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+window.removerItemLista = function(index) {
+    itensPedidoTemporario.splice(index, 1);
+    renderizarListaItensPedido();
 }
 
 // Auxiliar: Verifica se precisa mostrar select de tamanho e busca estoque
@@ -1309,47 +1505,30 @@ window.adicionarItemLista = function() {
     document.getElementById("ped-estoque-msg").innerText = "Item adicionado.";
 }
 
-function renderizarListaItensPedido() {
-    const tbody = document.getElementById("lista-itens-pedido");
-    if (itensPedidoTemporario.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999;">Nenhum item.</td></tr>';
-        return;
-    }
-    
-    let html = "";
-    itensPedidoTemporario.forEach((item, index) => {
-        html += `
-            <tr>
-                <td>${item.nome}</td>
-                <td>${item.tamanho || '-'}</td>
-                <td>${item.quantidade}</td>
-                <td><button class="btn-cancelar" onclick="removerItemLista(${index})" style="padding:2px 8px;">X</button></td>
-            </tr>
-        `;
-    });
-    tbody.innerHTML = html;
-}
 
-window.removerItemLista = function(index) {
-    itensPedidoTemporario.splice(index, 1);
-    renderizarListaItensPedido();
-}
-
+// 2. Função Principal: Salva Pedido, Baixa Estoque e Gera PDF
 window.salvarPedidoCompleto = async function() {
-    const destinoId = document.getElementById("ped-destino").value;
+    const destinoSelect = document.getElementById("ped-destino");
+    const destinoId = destinoSelect.value;
+    const destinoNome = destinoSelect.options[destinoSelect.selectedIndex].text;
     
-    if (!destinoId) return alert("Selecione o Local/Unidade de destino.");
+    if (!destinoId) return alert("Selecione o Local de destino.");
     if (itensPedidoTemporario.length === 0) return alert("Adicione pelo menos um item ao pedido.");
 
-    if (!confirm("Confirma a criação do pedido? O estoque será baixado imediatamente.")) return;
+    if (!confirm("Confirma o pedido? O estoque será baixado automaticamente.")) return;
+
+    const btnConfirmar = document.querySelector('.btn-confirmar');
+    btnConfirmar.innerText = "Processando...";
+    btnConfirmar.disabled = true;
 
     try {
-        // 1. Cria o Pedido (Status PENDENTE)
+        // --- CORREÇÃO AQUI: STATUS MINÚSCULO ---
+        // Alterado de 'PENDENTE' para 'pendente'
         const { data: pedido, error: errPed } = await supabase
             .from('pedidos')
             .insert([{ 
                 unidade_destino_id: destinoId, 
-                status: 'PENDENTE', 
+                status: 'pendente', // <--- AQUI ESTAVA O ERRO DO ENUM
                 data_solicitacao: new Date(),
                 solicitante_id: currentUserId 
             }])
@@ -1358,21 +1537,19 @@ window.salvarPedidoCompleto = async function() {
 
         if (errPed) throw errPed;
 
-        // 2. Processa cada item (Insere no banco + Baixa Estoque + Histórico)
+        // B. Loop dos Itens
         for (const item of itensPedidoTemporario) {
             
-            // A. Salva na tabela itens_pedido
+            // Salva na tabela itens_pedido
             await supabase.from('itens_pedido').insert({
                 pedido_id: pedido.id,
                 produto_id: item.produto_id,
-                quantidade: item.quantidade,
-                tamanho: item.tamanho,
-                tipo_produto: item.tipo
+                quantidade_solicitada: item.quantidade, 
+                tamanho: item.tamanho, 
             });
 
-            // B. Baixa do Estoque
-            if (item.tipo === 'CONSUMO') {
-                // Pega saldo atual novamente para segurança
+            // Baixa do Estoque
+            if (item.tipo_interno === 'consumo') {
                 const { data: est } = await supabase.from('estoque_consumo').select('*').eq('produto_id', item.produto_id).single();
                 if (est) {
                     await supabase.from('estoque_consumo')
@@ -1380,7 +1557,7 @@ window.salvarPedidoCompleto = async function() {
                         .eq('id', est.id);
                 }
             } else {
-                // Uniformes
+                // Uniformes (Roupas ou Calçados)
                 const { data: est } = await supabase.from('estoque_tamanhos')
                     .select('*')
                     .eq('produto_id', item.produto_id)
@@ -1393,78 +1570,166 @@ window.salvarPedidoCompleto = async function() {
                 }
             }
 
-            // C. Grava Histórico com a tag solicitada
+            // Histórico
             await registrarHistorico(
                 item.produto_id, 
                 item.quantidade, 
-                'SAIDA_PEDIDO', // TAG SOLICITADA
-                `Pedido #${pedido.id} - ${item.tamanho ? 'Tam:'+item.tamanho : ''}`, 
+                'SAIDA_PEDIDO', 
+                `Pedido #${pedido.id} para ${destinoNome}`, 
                 userProfile?.nome,
                 destinoId
             );
         }
 
-        alert("Pedido criado com sucesso!");
+        // Gera o PDF (A função gerarPDFPedido deve permanecer no script original, não precisa alterar)
+        await gerarPDFPedido(pedido.id, destinoNome, itensPedidoTemporario);
+
+        alert("Pedido criado com sucesso! O PDF foi baixado.");
         window.closeModal();
         window.renderTab('pedidos');
 
     } catch (error) {
         console.error(error);
         alert("Erro ao salvar pedido: " + error.message);
+    } finally {
+        if(btnConfirmar) {
+            btnConfirmar.innerText = "Confirmar Pedido";
+            btnConfirmar.disabled = false;
+        }
     }
 }
 
+// 3. Função para Gerar PDF (Folha A4)
+window.gerarPDFPedido = async function(pedidoId, destino, itens) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // Cabeçalho
+    doc.setFontSize(18);
+    doc.text(`PEDIDO DE SAÍDA Nº ${pedidoId}`, 105, 20, null, null, "center");
+    
+    doc.setFontSize(12);
+    doc.text(`Data: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 30);
+    doc.text(`Destino: ${destino}`, 14, 38);
+    doc.text(`Responsável Emissão: ${userProfile?.nome || 'Sistema'}`, 14, 46);
+
+    // Dados da Tabela
+    const tableData = itens.map(item => [
+        item.nome,
+        item.tamanho || '-',
+        item.tipo === 'CONSUMO' ? 'Material' : 'Uniforme',
+        item.quantidade
+    ]);
+
+    // Gera Tabela
+    doc.autoTable({
+        startY: 55,
+        head: [['Produto', 'Tamanho', 'Tipo', 'Qtd']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [37, 99, 235] } // Azul do sistema
+    });
+
+    // Área de Assinatura no Rodapé
+    const finalY = doc.lastAutoTable.finalY + 40; // 40px abaixo da tabela
+    
+    doc.line(20, finalY, 190, finalY); // Linha horizontal
+    doc.setFontSize(10);
+    doc.text(`Recebido por (Nome Legível): __________________________________________________`, 20, finalY + 10);
+    doc.text(`Assinatura e Data: __________________________________________________________`, 20, finalY + 20);
+
+    // Salva o arquivo
+    doc.save(`Pedido_${pedidoId}_${destino.replace(/\s+/g, '_')}.pdf`);
+}
+
+// 4. Gerenciar Pedido (Atualizar Status com Bloqueios)
 window.openModalGerenciarPedido = async function(pedidoId) {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
     
-    // Busca dados do pedido e dos itens
+    content.innerHTML = "<p>Carregando...</p>";
+    modal.style.display = 'block';
+
     const { data: pedido } = await supabase.from('pedidos').select('*, unidades(nome)').eq('id', pedidoId).single();
-    const { data: itens } = await supabase.from('itens_pedido').select('*, catalogo(nome)').eq('pedido_id', pedidoId);
+    // Atenção: Ajuste na query para pegar itens corretamente da tabela itens_pedido + catalogo
+    const { data: itens } = await supabase.from('itens_pedido')
+        .select('quantidade_solicitada, tamanho, catalogo(nome)')
+        .eq('pedido_id', pedidoId);
 
     if (!pedido) return;
 
     let htmlItens = `<table class="table-geral" style="width:100%"><thead><tr><th>Item</th><th>Tam</th><th>Qtd</th></tr></thead><tbody>`;
-    itens.forEach(i => {
-        htmlItens += `<tr><td>${i.catalogo.nome}</td><td>${i.tamanho||'-'}</td><td>${i.quantidade}</td></tr>`;
-    });
+    if(itens) {
+        itens.forEach(i => {
+            htmlItens += `<tr><td>${i.catalogo?.nome}</td><td>${i.tamanho||'-'}</td><td>${i.quantidade_solicitada}</td></tr>`;
+        });
+    }
     htmlItens += `</tbody></table>`;
 
-    // Lógica de Botões de Status
+    // Lógica de Status: Define quais botões aparecem
     let btnStatus = '';
     const st = pedido.status;
 
-    // Regras de Transição (Fluxo único, sem volta)
+    // Regra: Não pode voltar para PENDENTE. Só avança ou cancela.
+    
     if (st === 'PENDENTE') {
-        btnStatus += `<button onclick="alterarStatusPedido(${pedidoId}, 'EM_SEPARACAO')" class="btn-confirmar" style="background:orange">Iniciar Separação</button>`;
-        btnStatus += `<button onclick="cancelarPedido(${pedidoId})" class="btn-cancelar" style="margin-left:10px">Cancelar Pedido</button>`;
+        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'EM_SEPARACAO')" class="btn-confirmar" style="background:orange">Iniciar Separação</button>`;
+        btnStatus += `<button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="margin-left:10px">Cancelar (Estornar Estoque)</button>`;
     } 
     else if (st === 'EM_SEPARACAO') {
-        btnStatus += `<button onclick="alterarStatusPedido(${pedidoId}, 'PRONTO')" class="btn-confirmar" style="background:#2563eb">Marcar como Pronto</button>`;
-        // Permitir cancelar ainda? Depende da regra. Vamos assumir que sim, mas com cuidado.
+        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'PRONTO')" class="btn-confirmar" style="background:#2563eb">Marcar como Pronto</button>`;
+        btnStatus += `<button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="margin-left:10px">Cancelar</button>`;
     }
     else if (st === 'PRONTO') {
-        btnStatus += `<button onclick="alterarStatusPedido(${pedidoId}, 'EM_TRANSITO')" class="btn-confirmar" style="background:#8b5cf6">Despachar (Em Trânsito)</button>`;
+        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'EM_TRANSITO')" class="btn-confirmar" style="background:#8b5cf6">Enviar (Em Trânsito)</button>`;
+        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'ENTREGUE')" class="btn-confirmar" style="background:#10b981; margin-left:5px;">Entregue Balcão</button>`;
     }
     else if (st === 'EM_TRANSITO') {
-        btnStatus += `<button onclick="alterarStatusPedido(${pedidoId}, 'ENTREGUE')" class="btn-confirmar" style="background:#10b981">Confirmar Entrega</button>`;
+        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'ENTREGUE')" class="btn-confirmar" style="background:#10b981">Confirmar Entrega</button>`;
     }
-    else if (st === 'ENTREGUE' || st === 'CANCELADO') {
-        btnStatus = `<span>Pedido Finalizado (${st}). Nenhuma ação pendente.</span>`;
+    else if (st === 'ENTREGUE') {
+        btnStatus = `<p style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> Pedido Concluído.</p>`;
+    }
+    else if (st === 'CANCELADO') {
+        btnStatus = `<p style="color:red; font-weight:bold;"><i class="fas fa-ban"></i> Pedido Cancelado.</p>`;
     }
 
     content.innerHTML = `
         <h3>Gerenciar Pedido #${pedido.id}</h3>
         <p><strong>Destino:</strong> ${pedido.unidades?.nome}</p>
+        <p><strong>Data:</strong> ${new Date(pedido.data_solicitacao).toLocaleString()}</p>
         <p><strong>Status Atual:</strong> <span class="status-tag status-${st.toLowerCase()}">${st}</span></p>
         <hr>
-        <h4>Itens do Pedido:</h4>
+        <h4>Itens Solicitados:</h4>
         ${htmlItens}
         <div style="margin-top:20px; padding:15px; background:#f1f5f9; border-radius:8px; text-align:center;">
             ${btnStatus}
         </div>
+        <div style="margin-top:10px; text-align:center">
+             <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome}')" style="background:#64748b; font-size:0.8em"><i class="fas fa-print"></i> Re-imprimir PDF</button>
+        </div>
     `;
     modal.style.display = 'block';
+}
+
+// Função auxiliar para re-imprimir o PDF de um pedido antigo
+window.reimprimirPDF = async function(pedidoId, destinoNome) {
+    // Busca itens novamente
+    const { data: itens } = await supabase.from('itens_pedido')
+        .select('quantidade_solicitada, tamanho, catalogo(nome, tipo)')
+        .eq('pedido_id', pedidoId);
+        
+    if(!itens) return alert("Erro ao buscar itens.");
+    
+    // Mapeia para o formato que a função de PDF espera
+    const itensFormatados = itens.map(i => ({
+        nome: i.catalogo?.nome,
+        tamanho: i.tamanho,
+        tipo: i.catalogo?.tipo,
+        quantidade: i.quantidade_solicitada
+    }));
+    
+    await gerarPDFPedido(pedidoId, destinoNome, itensFormatados);
 }
 
 window.alterarStatusPedido = async function(id, novoStatus) {
