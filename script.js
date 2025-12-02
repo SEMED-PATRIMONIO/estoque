@@ -1647,89 +1647,194 @@ window.openModalGerenciarPedido = async function(pedidoId) {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
     
-    content.innerHTML = "<p>Carregando...</p>";
+    content.innerHTML = '<div style="text-align:center; padding:20px"><i class="fas fa-spinner fa-spin"></i> Carregando pedido...</div>';
     modal.style.display = 'block';
 
-    const { data: pedido } = await supabase.from('pedidos').select('*, unidades(nome)').eq('id', pedidoId).single();
-    // Atenção: Ajuste na query para pegar itens corretamente da tabela itens_pedido + catalogo
-    const { data: itens } = await supabase.from('itens_pedido')
-        .select('quantidade_solicitada, tamanho, catalogo(nome)')
-        .eq('pedido_id', pedidoId);
+    try {
+        // 1. Busca dados do Pedido
+        const { data: pedido, error: errPed } = await supabase
+            .from('pedidos')
+            .select('*, unidades(nome)')
+            .eq('id', pedidoId)
+            .single();
 
-    if (!pedido) return;
+        if (errPed) throw errPed;
 
-    let htmlItens = `<table class="table-geral" style="width:100%"><thead><tr><th>Item</th><th>Tam</th><th>Qtd</th></tr></thead><tbody>`;
-    if(itens) {
-        itens.forEach(i => {
-            htmlItens += `<tr><td>${i.catalogo?.nome}</td><td>${i.tamanho||'-'}</td><td>${i.quantidade_solicitada}</td></tr>`;
+        // 2. Busca os Itens do Pedido (Query Corrigida)
+        // Solicitamos explicitamente o ID para garantir a unicidade e o catalogo completo
+        const { data: itens, error: errItens } = await supabase
+            .from('itens_pedido')
+            .select('id, quantidade_solicitada, tamanho, catalogo(nome, tipo)') 
+            .eq('pedido_id', pedidoId);
+
+        if (errItens) throw errItens;
+
+        // Monta HTML da lista de itens
+        let htmlItens = `<table class="table-geral" style="width:100%; margin-bottom:20px;">
+            <thead>
+                <tr style="background:#f1f5f9;">
+                    <th>Produto</th>
+                    <th>Tipo</th>
+                    <th>Tam/Num</th>
+                    <th>Qtd</th>
+                </tr>
+            </thead>
+            <tbody>`;
+            
+        if(itens && itens.length > 0) {
+            itens.forEach(i => {
+                // Verificação de segurança caso catalogo venha nulo (item deletado, por exemplo)
+                const nomeProd = i.catalogo ? i.catalogo.nome : '<span style="color:red">Item Excluído</span>';
+                const tipoProd = i.catalogo ? i.catalogo.tipo : '-';
+                
+                htmlItens += `
+                    <tr>
+                        <td>${nomeProd}</td>
+                        <td>${tipoProd}</td>
+                        <td>${i.tamanho || '-'}</td>
+                        <td style="font-weight:bold">${i.quantidade_solicitada}</td>
+                    </tr>`;
+            });
+        } else {
+            htmlItens += `<tr><td colspan="4" style="text-align:center">Nenhum item encontrado neste pedido.</td></tr>`;
+        }
+        htmlItens += `</tbody></table>`;
+
+        // 3. Monta o Seletor de Status (Lógica Nova)
+        const statusAtual = pedido.status;
+        
+        // Lista de Status permitidos (Excluindo 'PENDENTE' para seleção)
+        const listaStatus = [
+            { val: 'EM_SEPARACAO', label: 'Em Separação' },
+            { val: 'PRONTO', label: 'Pronto / Aguardando' },
+            { val: 'EM_TRANSITO', label: 'Em Trânsito / Saiu da Unidade' },
+            { val: 'ENTREGUE', label: 'Entregue (Finalizado)' }
+        ];
+
+        let opcoesStatus = '';
+        listaStatus.forEach(opt => {
+            // Marca como selecionado se for o status atual
+            const selected = (opt.val === statusAtual) ? 'selected' : '';
+            opcoesStatus += `<option value="${opt.val}" ${selected}>${opt.label}</option>`;
         });
-    }
-    htmlItens += `</tbody></table>`;
 
-    // Lógica de Status: Define quais botões aparecem
-    let btnStatus = '';
-    const st = pedido.status;
+        // Se o status for CANCELADO, mostra apenas aviso
+        let areaAcoes = '';
+        if (statusAtual === 'CANCELADO') {
+            areaAcoes = `<div style="padding:15px; background:#fee2e2; color:#991b1b; border-radius:8px; text-align:center; font-weight:bold;">
+                <i class="fas fa-ban"></i> Este pedido está CANCELADO e o estoque foi estornado.
+            </div>`;
+        } else {
+            areaAcoes = `
+                <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Atualizar Status:</label>
+                    <div style="display:flex; gap:10px;">
+                        <select id="novo-status-selecionado" style="flex:1; padding:8px; border-radius:6px; margin:0;">
+                            ${opcoesStatus}
+                        </select>
+                        <button class="btn-confirmar" onclick="window.atualizarStatusPeloSelect(${pedidoId})">Salvar</button>
+                    </div>
+                    
+                    <div style="margin-top:15px; padding-top:15px; border-top:1px solid #e2e8f0; text-align:right;">
+                        <button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="font-size:0.9em;">
+                            <i class="fas fa-times-circle"></i> Cancelar Pedido (Estornar Estoque)
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
 
-    // Regra: Não pode voltar para PENDENTE. Só avança ou cancela.
-    
-    if (st === 'PENDENTE') {
-        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'EM_SEPARACAO')" class="btn-confirmar" style="background:orange">Iniciar Separação</button>`;
-        btnStatus += `<button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="margin-left:10px">Cancelar (Estornar Estoque)</button>`;
-    } 
-    else if (st === 'EM_SEPARACAO') {
-        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'PRONTO')" class="btn-confirmar" style="background:#2563eb">Marcar como Pronto</button>`;
-        btnStatus += `<button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="margin-left:10px">Cancelar</button>`;
-    }
-    else if (st === 'PRONTO') {
-        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'EM_TRANSITO')" class="btn-confirmar" style="background:#8b5cf6">Enviar (Em Trânsito)</button>`;
-        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'ENTREGUE')" class="btn-confirmar" style="background:#10b981; margin-left:5px;">Entregue Balcão</button>`;
-    }
-    else if (st === 'EM_TRANSITO') {
-        btnStatus += `<button onclick="window.alterarStatusPedido(${pedidoId}, 'ENTREGUE')" class="btn-confirmar" style="background:#10b981">Confirmar Entrega</button>`;
-    }
-    else if (st === 'ENTREGUE') {
-        btnStatus = `<p style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> Pedido Concluído.</p>`;
-    }
-    else if (st === 'CANCELADO') {
-        btnStatus = `<p style="color:red; font-weight:bold;"><i class="fas fa-ban"></i> Pedido Cancelado.</p>`;
-    }
+        // Renderiza Modal Final
+        content.innerHTML = `
+            <h3><i class="fas fa-edit"></i> Gerenciar Pedido #${pedido.id}</h3>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:15px; font-size:0.95em;">
+                <div><strong>Destino:</strong><br> ${pedido.unidades?.nome || 'N/A'}</div>
+                <div><strong>Data:</strong><br> ${new Date(pedido.data_solicitacao).toLocaleString()}</div>
+                <div><strong>Solicitante:</strong><br> (ID: ${pedido.solicitante_id ? pedido.solicitante_id.substring(0,8) : 'Sistema'})</div>
+                <div><strong>Status Atual:</strong><br> <span class="status-tag status-${statusAtual.toLowerCase()}">${statusAtual}</span></div>
+            </div>
 
-    content.innerHTML = `
-        <h3>Gerenciar Pedido #${pedido.id}</h3>
-        <p><strong>Destino:</strong> ${pedido.unidades?.nome}</p>
-        <p><strong>Data:</strong> ${new Date(pedido.data_solicitacao).toLocaleString()}</p>
-        <p><strong>Status Atual:</strong> <span class="status-tag status-${st.toLowerCase()}">${st}</span></p>
-        <hr>
-        <h4>Itens Solicitados:</h4>
-        ${htmlItens}
-        <div style="margin-top:20px; padding:15px; background:#f1f5f9; border-radius:8px; text-align:center;">
-            ${btnStatus}
-        </div>
-        <div style="margin-top:10px; text-align:center">
-             <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome}')" style="background:#64748b; font-size:0.8em"><i class="fas fa-print"></i> Re-imprimir PDF</button>
-        </div>
-    `;
-    modal.style.display = 'block';
+            <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
+            
+            <h4>Itens do Pedido:</h4>
+            ${htmlItens}
+            
+            ${areaAcoes}
+
+            <div style="margin-top:20px; text-align:center;">
+                 <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome}')" style="background:#64748b; color:white; border:none; padding:8px 15px; border-radius:6px;">
+                    <i class="fas fa-print"></i> Re-imprimir PDF
+                 </button>
+            </div>
+        `;
+
+    } catch (error) {
+        console.error(error);
+        content.innerHTML = `<p style="color:red; text-align:center;">Erro ao carregar detalhes do pedido:<br>${error.message}</p>`;
+    }
+}
+
+window.atualizarStatusPeloSelect = async function(pedidoId) {
+    const select = document.getElementById("novo-status-selecionado");
+    const novoStatus = select.value;
+
+    if(!novoStatus) return;
+
+    // Confirmação simples
+    if(!confirm(`Deseja alterar o status para "${novoStatus}"?`)) return;
+
+    try {
+        const { error } = await supabase
+            .from('pedidos')
+            .update({ status: novoStatus })
+            .eq('id', pedidoId);
+
+        if(error) throw error;
+
+        alert("Status atualizado com sucesso!");
+        window.closeModal();
+        window.renderTab('pedidos'); // Atualiza a tabela no fundo
+
+    } catch (e) {
+        alert("Erro ao atualizar: " + e.message);
+    }
 }
 
 // Função auxiliar para re-imprimir o PDF de um pedido antigo
 window.reimprimirPDF = async function(pedidoId, destinoNome) {
-    // Busca itens novamente
-    const { data: itens } = await supabase.from('itens_pedido')
-        .select('quantidade_solicitada, tamanho, catalogo(nome, tipo)')
-        .eq('pedido_id', pedidoId);
+    try {
+        // Feedback visual
+        const btnPrint = document.querySelector('button[onclick*="reimprimirPDF"]');
+        if(btnPrint) btnPrint.innerText = "Gerando PDF...";
+
+        // Busca itens novamente com segurança
+        const { data: itens, error } = await supabase
+            .from('itens_pedido')
+            .select('quantidade_solicitada, tamanho, catalogo(nome, tipo)')
+            .eq('pedido_id', pedidoId);
+            
+        if(error) throw error;
+        if(!itens || itens.length === 0) return alert("Não há itens neste pedido para imprimir.");
         
-    if(!itens) return alert("Erro ao buscar itens.");
-    
-    // Mapeia para o formato que a função de PDF espera
-    const itensFormatados = itens.map(i => ({
-        nome: i.catalogo?.nome,
-        tamanho: i.tamanho,
-        tipo: i.catalogo?.tipo,
-        quantidade: i.quantidade_solicitada
-    }));
-    
-    await gerarPDFPedido(pedidoId, destinoNome, itensFormatados);
+        // Mapeia e trata possíveis nulos
+        const itensFormatados = itens.map(i => ({
+            nome: i.catalogo ? i.catalogo.nome : '(Produto Removido)',
+            tamanho: i.tamanho,
+            tipo: i.catalogo ? i.catalogo.tipo : 'N/A',
+            quantidade: i.quantidade_solicitada
+        }));
+        
+        // Chama a função original de gerar PDF (que já existe no seu código)
+        await gerarPDFPedido(pedidoId, destinoNome, itensFormatados);
+
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao gerar PDF: " + e.message);
+    } finally {
+        const btnPrint = document.querySelector('button[onclick*="reimprimirPDF"]');
+        if(btnPrint) btnPrint.innerHTML = '<i class="fas fa-print"></i> Re-imprimir PDF';
+    }
 }
 
 window.alterarStatusPedido = async function(id, novoStatus) {
