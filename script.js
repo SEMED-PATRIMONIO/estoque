@@ -1706,7 +1706,7 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         // Lista de Status permitidos (Excluindo 'PENDENTE' para seleção)
         const listaStatus = [
             { val: 'em_separacao', label: 'EM SEPARAÇÃO' },
-            { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA },
+            { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA' }, // <--- Aspa adicionada
             { val: 'em_transito', label: 'EM TRÂNSITO / SAIU DA UNIDADE' },
             { val: 'entregue', label: 'ENTREGUE' }
         ];

@@ -329,32 +329,48 @@ td button {
 }
 
 /* =========================================
-   7. MODAIS (Estilo Glassmorphism Suave)
+   7. MODAIS (Estilo Glassmorphism Suave e Flutuante)
    ========================================= */
 .modal, .config-modal {
-    background-color: rgba(15, 23, 42, 0.6); /* Azul escuro translúcido */
-    backdrop-filter: blur(8px); /* Efeito de vidro */
-    z-index: 9999;
+    display: none; /* Começa invisível por padrão */
+    position: fixed; /* Fixa na tela, flutuando sobre tudo */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%; /* Ocupa a tela inteira */
+    overflow: auto; /* Permite rolar se o modal for muito alto */
+    
+    background-color: rgba(15, 23, 42, 0.75); /* Fundo escuro mais forte para foco */
+    backdrop-filter: blur(5px); /* Efeito de desfoque no fundo */
+    z-index: 9999; /* Garante que fique acima de tudo */
+    
+    /* Centralização vertical e horizontal suave via padding */
+    padding-top: 50px; 
+    padding-bottom: 50px;
 }
 
 .modal-content, .config-modal-content {
     background: var(--bg-card);
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); /* Sombra mais profunda */
     animation: zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    padding: 30px;
+    
+    /* Centralização */
+    margin: 0 auto; /* Centraliza horizontalmente */
     position: relative;
-    max-width: 600px; /* Largura padrão */
+    
     width: 90%;
-    margin: 5% auto;
+    max-width: 600px; /* Largura padrão */
+    padding: 30px;
 }
 
+/* Modal de Configuração (Maior e mais alto) */
 .config-modal-content {
-    max-width: 1000px; /* Modal de config é maior */
+    max-width: 1100px; 
+    height: 80vh; /* Ocupa 80% da altura da tela */
     display: flex;
     flex-direction: column;
-    height: 80vh;
 }
 
 .modal-content h3, .config-modal-title {
@@ -382,7 +398,7 @@ td button {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-/* Botão Fechar */
+/* Botão Fechar (X) */
 .close-button, .config-close-button {
     position: absolute;
     top: 20px;
@@ -393,6 +409,7 @@ td button {
     line-height: 0.7;
     transition: color 0.2s;
 }
+
 .close-button:hover, .config-close-button:hover {
     color: var(--danger);
 }
