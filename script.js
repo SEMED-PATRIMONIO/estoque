@@ -1705,10 +1705,10 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         
         // Lista de Status permitidos (Excluindo 'PENDENTE' para seleção)
         const listaStatus = [
-            { val: 'EM_SEPARACAO', label: 'Em Separação' },
-            { val: 'PRONTO', label: 'Pronto / Aguardando' },
-            { val: 'EM_TRANSITO', label: 'Em Trânsito / Saiu da Unidade' },
-            { val: 'ENTREGUE', label: 'Entregue (Finalizado)' }
+            { val: 'em_separacao', label: 'EM SEPARAÇÃO' },
+            { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA },
+            { val: 'em_transito', label: 'EM TRÂNSITO / SAIU DA UNIDADE' },
+            { val: 'entregue', label: 'ENTREGUE' }
         ];
 
         let opcoesStatus = '';
