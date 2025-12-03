@@ -342,11 +342,15 @@ td button {
     
     background-color: rgba(15, 23, 42, 0.75); /* Fundo escuro mais forte para foco */
     backdrop-filter: blur(5px); /* Efeito de desfoque no fundo */
-    z-index: 9999; /* Garante que fique acima de tudo */
+    z-index: 9990; /* Garante que fique acima de tudo */
     
     /* Centralização vertical e horizontal suave via padding */
     padding-top: 50px; 
     padding-bottom: 50px;
+}
+
+#global-modal {
+    z-index: 9999 !important;
 }
 
 .modal-content, .config-modal-content {
@@ -543,4 +547,94 @@ td button {
     textarea {
         text-transform: uppercase;
     }
+/* =========================================
+   12. UNIFORMES
+   ========================================= */    
+   /* ------------ MELHORIAS TABELA UNIFORMES ------------ */
+
+.uniformes-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+}
+
+/* Cabeçalho */
+.uniformes-table thead tr:first-child th {
+    background: #f3f6fb;
+    font-weight: 700;
+    padding: 12px;
+    text-align: center;
+    border-bottom: 2px solid #e2e6ea;
+}
+
+.uniformes-table thead tr:nth-child(2) th {
+    background: #fafbfd;
+    padding: 10px;
+    font-weight: bold;
+    color: #2c3e50;
+    border-bottom: 2px solid #dfe4ea;
+}
+
+/* Linhas do corpo */
+.uniformes-table tbody tr {
+    border-bottom: 1px solid #ececec;
+}
+
+.uniformes-table tbody tr:nth-child(even) {
+    background: #fafafa;
+}
+
+.uniformes-table tbody td {
+    padding: 10px;
+    text-align: center;
+}
+
+/* Tamanhos */
+.uniformes-table tbody td:first-child {
+    font-weight: 600;
+    background: #f7f9fc;
+    color: #34495e;
+    border-right: 1px solid #e6e9ef;
+}
+
+/* Valores zero em cinza */
+.uniformes-table tbody td {
+    color: #2d3436;
+}
+.uniformes-table tbody td.zero-value {
+    color: #bdc3c7 !important;
+}
+
+/* Botões de movimentação (Ações no topo dos produtos) */
+.uniformes-table th button {
+    border: none;
+    padding: 4px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.uniformes-table th button i {
+    font-size: 12px;
+}
+
+/* Botão + (entrada) */
+.uniformes-table th button:nth-child(1) {
+    background: #e6f7ec;
+    color: #1e8b34;
+}
+.uniformes-table th button:nth-child(1):hover {
+    background: #d4f3df;
+}
+
+/* Botão - (saída) */
+.uniformes-table th button:nth-child(2) {
+    background: #fdecea;
+    color: #c0392b;
+}
+.uniformes-table th button:nth-child(2):hover {
+    background: #f9d7d3;
+}
+
 }

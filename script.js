@@ -752,90 +752,87 @@ async function criarProdutoNoEstoque(produto) {
 // PARTE 7: UNIFORMES ROUPAS
 // ============================================================================
 
-window.renderTabUniformesRoupas = async function() {
+window.renderTabUniformesRoupas = async function () {
     const tab = document.getElementById("tab-content");
-    
-    // 1. Estrutura Base (Cabeçalho Vazio para preencher dinamicamente)
+
+    // Estrutura inicial
     tab.innerHTML = `
         <div class="uniformes-container">
             <div class="uniformes-header">
                 <h2><i class="fas fa-tshirt"></i> Uniformes — Roupas</h2>
             </div>
-            <div class="uniformes-lista-produtos" style="overflow-x:auto;">
-                <table class="uniformes-table data-table">
-                    <thead>
-                        <tr id="header-roupas">
-                            <th>Produto</th>
-                            </tr>
-                    </thead>
-                    <tbody id="lista-uniformes-roupas"><tr><td colspan="5">Carregando...</td></tr></tbody>
+            <div style="overflow-x: auto;">
+                <table class="uniformes-table data-table" id="table-roupas">
+                    <thead id="thead-roupas"></thead>
+                    <tbody id="tbody-roupas"></tbody>
                 </table>
             </div>
-        </div>`;
+        </div>
+    `;
 
-    const theadRow = document.getElementById("header-roupas");
-    const corpo = document.getElementById("lista-uniformes-roupas");
-    
-    // 2. Buscas no Banco de Dados (Produtos + Tamanhos Personalizados + Estoque)
-    const { data: produtos } = await supabase.from("catalogo").select("*").eq("tipo", "UNIFORMES ROUPAS").order("nome");
-    const { data: tamanhosDb } = await supabase.from("tamanhos_roupas").select("*").order("ordem");
-    const { data: estoque } = await supabase.from("estoque_tamanhos").select("*");
-    
-    // Validação se não houver tamanhos ou produtos
-    if (!tamanhosDb || tamanhosDb.length === 0) {
-        corpo.innerHTML = "<tr><td colspan='5'>Nenhum tamanho de roupa cadastrado nas configurações.</td></tr>";
-        return;
-    }
-    
-    // 3. Montar Cabeçalho Dinamicamente (Baseado no seu cadastro)
-    tamanhosDb.forEach(t => {
-        const th = document.createElement("th");
-        th.innerText = t.tamanho;
-        theadRow.appendChild(th);
-    });
-    // Adiciona colunas finais
-    const thTotal = document.createElement("th"); thTotal.innerText = "Total"; theadRow.appendChild(thTotal);
-    const thAcoes = document.createElement("th"); thAcoes.innerText = "Ações"; theadRow.appendChild(thAcoes);
+    const thead = document.getElementById("thead-roupas");
+    const tbody = document.getElementById("tbody-roupas");
+
+    const { data: produtos } = await supabase
+        .from("catalogo")
+        .select("*")
+        .eq("tipo", "UNIFORMES ROUPAS")
+        .order("nome");
+
+    const { data: tamanhos } = await supabase
+        .from("tamanhos_roupas")
+        .select("*")
+        .order("ordem");
+
+    const { data: estoque } = await supabase
+        .from("estoque_tamanhos")
+        .select("*");
 
     if (!produtos || produtos.length === 0) {
-        corpo.innerHTML = `<tr><td colspan="${tamanhosDb.length + 3}">Nenhum uniforme cadastrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="50">Nenhum uniforme cadastrado.</td></tr>`;
         return;
     }
 
-    corpo.innerHTML = "";
+    // ---------- CABEÇALHO ----------
+    let headerRow1 = `<tr><th>TAMANHO</th>`;
+    let headerRow2 = `<tr><th></th>`; // Totais
 
-    // 4. Montar Linhas dos Produtos
-    produtos.forEach(prod => {
-        const tr = document.createElement("tr");
-        let htmlLinha = `<td>${prod.nome}</td>`;
-        
-        // Filtra estoque deste produto
-        const estProd = estoque.filter(e => e.produto_id === prod.id);
-        let somaTotal = 0;
+    produtos.forEach(p => {
+        headerRow1 += `
+            <th style="text-align:center;">
+                ${p.nome}<br>
+                <button onclick="window.modalMovimentoUniforme(${p.id}, 'entrada', 'roupas')" style="margin-right:5px;">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button onclick="window.modalMovimentoUniforme(${p.id}, 'saida', 'roupas')">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </th>`;
 
-        // Loop pelos tamanhos cadastrados (e não os fixos)
-        tamanhosDb.forEach(t => {
-            // Busca a quantidade para este tamanho específico
-            const itemEstoque = estProd.find(e => e.tamanho === t.tamanho);
-            const qtd = itemEstoque ? itemEstoque.quantidade : 0;
-            somaTotal += qtd;
-            
-            htmlLinha += `<td>${qtd}</td>`;
+        const estoqueProd = estoque.filter(e => e.produto_id === p.id);
+        const totalProd = estoqueProd.reduce((s, x) => s + x.quantidade, 0);
+
+        headerRow2 += `<th style="text-align:center; font-weight:bold;">${totalProd}</th>`;
+    });
+
+    headerRow1 += `</tr>`;
+    headerRow2 += `</tr>`;
+
+    thead.innerHTML = headerRow1 + headerRow2;
+
+    // ---------- CORPO (Tamanhos x Produtos) ----------
+    tamanhos.forEach(t => {
+        let row = `<tr><td style="font-weight:bold;">${t.tamanho}</td>`;
+
+        produtos.forEach(p => {
+            const item = estoque.find(e => e.produto_id === p.id && e.tamanho === t.tamanho);
+            row += `<td style="text-align:center;">${item ? item.quantidade : 0}</td>`;
         });
 
-        // Colunas finais
-        htmlLinha += `<td style="font-weight:bold">${somaTotal}</td>`;
-        htmlLinha += `
-            <td>
-                <button onclick="window.modalMovimentoUniforme(${prod.id}, 'entrada', 'roupas')"><i class="fas fa-plus"></i></button>
-                <button onclick="window.modalMovimentoUniforme(${prod.id}, 'saida', 'roupas')"><i class="fas fa-minus"></i></button>
-            </td>
-        `;
-        
-        tr.innerHTML = htmlLinha;
-        corpo.appendChild(tr);
+        row += `</tr>`;
+        tbody.innerHTML += row;
     });
-}
+};
 
 window.modalMovimentoUniforme = async function(prodId, tipo, categoria) {
     const modal = document.getElementById("global-modal");
@@ -916,77 +913,86 @@ window.confirmarMovimentoUniforme = async function(prodId, tipo, categoria) {
 // PARTE 8: UNIFORMES CALÇADOS
 // ============================================================================
 
-window.renderTabUniformesCalcados = async function() {
+window.renderTabUniformesCalcados = async function () {
     const tab = document.getElementById("tab-content");
-    
-    // 1. Estrutura básica
+
     tab.innerHTML = `
         <div class="uniformes-container">
-            <div class="uniformes-header"><h2><i class="fas fa-shoe-prints"></i> Uniformes — Calçados</h2></div>
-            <div style="overflow-x:auto;">
+            <div class="uniformes-header">
+                <h2><i class="fas fa-shoe-prints"></i> Uniformes — Calçados</h2>
+            </div>
+            <div style="overflow-x: auto;">
                 <table class="uniformes-table data-table" id="table-calcados">
-                    <thead><tr id="head-calcados"><th>Produto</th></tr></thead>
-                    <tbody id="body-calcados"></tbody>
+                    <thead id="thead-calcados"></thead>
+                    <tbody id="tbody-calcados"></tbody>
                 </table>
             </div>
         </div>
     `;
 
-    const theadRow = document.getElementById("head-calcados");
-    const tbody = document.getElementById("body-calcados");
+    const thead = document.getElementById("thead-calcados");
+    const tbody = document.getElementById("tbody-calcados");
 
-    // 2. Busca dados
-    const { data: produtos } = await supabase.from("catalogo").select("*").eq("tipo", "UNIFORMES CALÇADOS").order("nome"); // Lembre-se de ajustar se mudou para minúsculo
-    const { data: tamanhos } = await supabase.from("tamanhos_calcados").select("*").order("ordem");
-    const { data: estoque } = await supabase.from("estoque_tamanhos").select("*");
+    const { data: produtos } = await supabase
+        .from("catalogo")
+        .select("*")
+        .eq("tipo", "UNIFORMES CALÇADOS")
+        .order("nome");
 
-    if(!tamanhos || tamanhos.length === 0) return tbody.innerHTML = "<tr><td>Sem tamanhos cadastrados.</td></tr>";
+    const { data: tamanhos } = await supabase
+        .from("tamanhos_calcados")
+        .select("*")
+        .order("ordem");
 
-    // 3. Monta cabeçalho dinâmico
-    tamanhos.forEach(t => {
-        const th = document.createElement("th");
-        th.innerText = t.numero;
-        theadRow.appendChild(th);
+    const { data: estoque } = await supabase
+        .from("estoque_tamanhos")
+        .select("*");
+
+    if (!produtos || produtos.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="50">Nenhum calçado cadastrado.</td></tr>`;
+        return;
+    }
+
+    // ---------- CABEÇALHO ----------
+    let headerRow1 = `<tr><th>TAMANHO</th>`;
+    let headerRow2 = `<tr><th></th>`; // Totais
+
+    produtos.forEach(p => {
+        headerRow1 += `
+            <th style="text-align:center;">
+                ${p.nome}<br>
+                <button onclick="window.modalMovimentoUniforme(${p.id}, 'entrada', 'calcados')" style="margin-right:5px;">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button onclick="window.modalMovimentoUniforme(${p.id}, 'saida', 'calcados')">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </th>`;
+
+        const estoqueProd = estoque.filter(e => e.produto_id === p.id);
+        const totalProd = estoqueProd.reduce((s, x) => s + x.quantidade, 0);
+
+        headerRow2 += `<th style="text-align:center; font-weight:bold;">${totalProd}</th>`;
     });
-    
-    // --- ADIÇÃO 1: Coluna Total no Cabeçalho ---
-    const thTotal = document.createElement("th"); 
-    thTotal.innerText = "Total"; 
-    theadRow.appendChild(thTotal);
-    // -------------------------------------------
 
-    // Coluna Ações
-    const thAction = document.createElement("th"); thAction.innerText = "Ações"; theadRow.appendChild(thAction);
+    headerRow1 += `</tr>`;
+    headerRow2 += `</tr>`;
 
-    // 4. Monta linhas
-    produtos.forEach(prod => {
-        const tr = document.createElement("tr");
-        let html = `<td>${prod.nome}</td>`;
-        
-        const estProd = estoque.filter(e => e.produto_id === prod.id);
-        let totalLinha = 0; // Variável para somar a linha
-        
-        tamanhos.forEach(t => {
-            const item = estProd.find(e => e.tamanho == t.numero); 
-            const q = item ? item.quantidade : 0;
-            
-            totalLinha += q; // Soma ao total
-            html += `<td>${q}</td>`;
+    thead.innerHTML = headerRow1 + headerRow2;
+
+    // ---------- CORPO ----------
+    tamanhos.forEach(t => {
+        let row = `<tr><td style="font-weight:bold;">${t.numero}</td>`;
+
+        produtos.forEach(p => {
+            const item = estoque.find(e => e.produto_id === p.id && e.tamanho === String(t.numero));
+            row += `<td style="text-align:center;">${item ? item.quantidade : 0}</td>`;
         });
 
-        // --- ADIÇÃO 2: Célula com o Total da Linha ---
-        html += `<td style="font-weight:bold; background-color: #f8fafc;">${totalLinha}</td>`;
-        // ---------------------------------------------
-
-        html += `<td>
-            <button onclick="window.modalMovimentoUniforme(${prod.id}, 'entrada', 'calcados')"><i class="fas fa-plus"></i></button>
-            <button onclick="window.modalMovimentoUniforme(${prod.id}, 'saida', 'calcados')"><i class="fas fa-minus"></i></button>
-        </td>`;
-        
-        tr.innerHTML = html;
-        tbody.appendChild(tr);
+        row += `</tr>`;
+        tbody.innerHTML += row;
     });
-}
+};
 
 // ============================================================================
 // PARTE 9: MODAIS OPERACIONAIS GERAIS
