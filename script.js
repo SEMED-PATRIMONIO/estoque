@@ -52,7 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 currentUserId = authData.user.id;
                 await loadUserProfile(currentUserId);
-
+                // [NOVO] Aplica as regras de visibilidade
+                aplicarRestricoesInterface(); 
                 // Troca as telas
                 loginScreen.style.display = 'none'; // Esconde login
                 mainApp.classList.remove('hidden'); // Remove classe hidden
@@ -115,11 +116,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Carrega perfil do usuário para definir permissões
 async function loadUserProfile(uid) {
-    const { data, error } = await supabase.from('usuarios').select('nivel_acesso, nome_completo').eq('id', uid).single();
+    // [Modificação] Adicionado 'unidade_id' na seleção
+    const { data, error } = await supabase.from('usuarios')
+        .select('nivel_acesso, nome_completo, unidade_id') 
+        .eq('id', uid)
+        .single();
+
     if (error || !data) {
-        userProfile = { nivel: 'comum', nome: 'Desconhecido' };
+        userProfile = { nivel: 'comum', nome: 'Desconhecido', unidadeId: null };
     } else {
-        userProfile = { nivel: data.nivel_acesso, nome: data.nome_completo };
+        // [Modificação] Salvamos a unidadeId no objeto global
+        userProfile = { 
+            nivel: data.nivel_acesso, 
+            nome: data.nome_completo,
+            unidadeId: data.unidade_id 
+        };
+    }
+}
+
+function aplicarRestricoesInterface() {
+    if (userProfile.nivel === 'comum') {
+        // 1. Lista de abas para esconder (IDs do data-tab)
+        const abasProibidas = [
+            'uniformes_roupas', 
+            'uniformes_calcados', 
+            'estoque_consumo', // Aba Material
+            'patrimonio',
+            'historico', 
+            'relatorios', 
+            'calculadora'
+            // Nota: 'pedidos' e 'historico' permanecem visíveis (a menos que queira tirar histórico também)
+        ];
+
+        // Esconde os botões das abas
+        abasProibidas.forEach(tab => {
+            const btn = document.querySelector(`.tab-button[data-tab="${tab}"]`);
+            if (btn) btn.style.display = 'none';
+        });
+
+        // 2. Esconde o botão de Configurações no cabeçalho
+        const btnConfig = document.getElementById('btn-config');
+        if (btnConfig) btnConfig.style.display = 'none';
+
+        // 3. Força a navegação imediata para a única aba útil: Pedidos
+        // Remove a classe 'active' da aba padrão (uniformes) e ativa pedidos
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+        const btnPedidos = document.querySelector(`.tab-button[data-tab="pedidos"]`);
+        
+        if (btnPedidos) {
+            btnPedidos.classList.add('active');
+            activeTab = 'pedidos';
+            window.renderTab('pedidos');
+        }
     }
 }
 
@@ -212,16 +260,39 @@ window.renderTab = async function(tabName) {
             data = res;
         }
         else if (tabName === 'patrimonio') {
-            const { data: res } = await supabase.from('patrimonio')
+            // Inicia a query base
+            let query = supabase.from('patrimonio')
                 .select('id, codigo_patrimonio, estado_conservacao, inservivel, catalogo(nome), unidades:unidade_id(nome)');
-            if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
-        } 
-        else if (tabName === 'pedidos') {
-            const { data: res } = await supabase.from('pedidos')
-                .select('id, status, data_solicitacao, unidades(nome)').order('data_solicitacao', { ascending: false });
-            data = res;
-        } 
 
+            // [Demanda 2a] Se for comum, filtra pela unidade do usuário
+            if (userProfile.nivel === 'comum' && userProfile.unidadeId) {
+                query = query.eq('unidade_id', userProfile.unidadeId);
+            }
+
+            const { data: res, error } = await query; // Executa a query montada
+            
+            if (error) console.error(error);
+            // Ordenação via JavaScript permanece a mesma
+            if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
+        }
+        else if (tabName === 'pedidos') {
+            // Inicia a query base
+            let query = supabase.from('pedidos')
+                .select('id, status, data_solicitacao, unidades(nome)')
+                .order('data_solicitacao', { ascending: false });
+
+            // [Demanda 2b] Lógica para usuário comum
+            if (userProfile.nivel === 'comum' && userProfile.unidadeId) {
+                // Filtra status EM TRÂNSITO (usando a string 'em_transito' conforme o script original)
+                // E filtra se a unidade de destino for a unidade do usuário
+                query = query.eq('status', 'em_transito')
+                            .eq('unidade_destino_id', userProfile.unidadeId);
+            }
+
+            const { data: res, error } = await query;
+            if (error) console.error(error);
+            data = res || [];
+        }
         // Constrói o HTML
         html += renderActionButtons(tabName);
         html += renderTable(tabName, data);
@@ -1137,37 +1208,130 @@ window.confirmarSaidaRapida = async function() {
     window.renderTab("estoque_consumo");
 }
 
-window.openModalMovimentarPatrimonio = async function() {
+window.openModalMovimentarPatrimonio = async function () {
+    if (!selectedRowId) {
+        alert("Selecione um item do patrimônio primeiro.");
+        return;
+    }
+
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
-    
-    const { data: itens } = await supabase.from("patrimonio").select("id, codigo_patrimonio, catalogo(nome), unidades(nome)");
-    const { data: locais } = await supabase.from("unidades").select("id, nome");
+
+    // Busca item selecionado (incluindo nome do local atual)
+    const { data: item, error: errItem } = await supabase
+        .from("patrimonio")
+        .select("id, codigo_patrimonio, catalogo(nome), unidade_id, unidades:unidade_id(nome)")
+        .eq("id", selectedRowId)
+        .single();
+
+    if (errItem || !item) {
+        console.error("Erro ao buscar patrimônio:", errItem);
+        alert("Erro ao carregar os dados do item. Veja console.");
+        return;
+    }
+
+    // Busca todos os locais/unidades (sem filtro "ativo" pois a coluna pode não existir)
+    const { data: locais, error: errLocais } = await supabase
+        .from("unidades")
+        .select("id, nome")
+        .order("nome");
+
+    if (errLocais || !locais) {
+        console.error("Erro ao buscar locais:", errLocais);
+        alert("Erro ao carregar os locais. Veja console.");
+        return;
+    }
 
     content.innerHTML = `
         <h3>Movimentar Patrimônio</h3>
+
         <label>Item:</label>
-        <select id="mov-pat-id">
-            ${itens.map(i => `<option value="${i.id}">${i.codigo_patrimonio} - ${i.catalogo.nome} (${i.unidades?.nome})</option>`).join('')}
-        </select>
-        <label>Novo Local:</label>
+        <input type="text" disabled value="${(item.codigo_patrimonio || '')} - ${(item.catalogo?.nome || '')}">
+
+        <label>Local atual:</label>
+        <input type="text" disabled value="${item.unidades?.nome || 'Sem Local'}">
+
+        <label>Novo local:</label>
         <select id="mov-pat-dest">
+            <option value="">Selecione...</option>
             ${locais.map(l => `<option value="${l.id}">${l.nome}</option>`).join('')}
         </select>
-        <button class="btn-confirmar" onclick="window.confirmarMovPatrimonio()">Mover</button>
-    `;
-    modal.style.display = 'block';
-}
 
-window.confirmarMovPatrimonio = async function() {
-    const id = document.getElementById("mov-pat-id").value;
-    const dest = document.getElementById("mov-pat-dest").value;
-    
-    await supabase.from("patrimonio").update({ unidade_id: dest }).eq("id", id);
-    alert("Movimentado.");
-    window.closeModal();
-    window.renderTab("patrimonio");
-}
+        <label>Motivo (opcional):</label>
+        <input id="mov-pat-motivo" type="text" placeholder="Motivo da movimentação (opcional)">
+
+        <div style="text-align:right; margin-top:10px;">
+            <button class="btn-cancelar" onclick="window.closeModal()">Cancelar</button>
+            <button class="btn-confirmar" onclick="window.confirmarMovPatrimonio()">Mover</button>
+        </div>
+    `;
+
+    modal.style.display = "block";
+};
+
+window.confirmarMovPatrimonio = async function () {
+    if (!selectedRowId) {
+        alert("Nenhum item selecionado.");
+        return;
+    }
+
+    const dest = document.getElementById("mov-pat-dest")?.value;
+    const motivo = document.getElementById("mov-pat-motivo")?.value || "Movimentação de patrimônio";
+
+    if (!dest) return alert("Selecione o novo local.");
+
+    try {
+        // [Modificação] Buscamos também produto_id e codigo_patrimonio para o histórico global
+        const { data: atual, error: errAtual } = await supabase
+            .from("patrimonio")
+            .select("unidade_id, produto_id, codigo_patrimonio") 
+            .eq("id", selectedRowId)
+            .single();
+
+        if (errAtual) throw errAtual;
+
+        const localAnterior = atual?.unidade_id || null;
+        const prodId = atual?.produto_id;
+        const plaqueta = atual?.codigo_patrimonio;
+
+        // 1) Atualiza o patrimônio (Local novo)
+        const { error: errUpdate } = await supabase
+            .from("patrimonio")
+            .update({ unidade_id: dest })
+            .eq("id", selectedRowId);
+
+        if (errUpdate) throw errUpdate;
+
+        // 2) Insere no historico_patrimonio (Específico)
+        await supabase.from("historico_patrimonio").insert([{
+            patrimonio_id: selectedRowId,
+            local_anterior_id: localAnterior,
+            local_novo_id: dest,
+            data_movimentacao: new Date().toISOString(),
+            responsavel_id: currentUserId || null,
+            motivo: motivo
+        }]);
+
+        // 3) [NOVO] Insere no Histórico Global (Demanda 1)
+        // Registra a movimentação na aba 'Histórico'
+        await registrarHistorico(
+            prodId, 
+            1, // Quantidade é sempre 1 para patrimônio individual
+            'MOVIMENTACAO_PATRIMONIO', 
+            `Plaqueta: ${plaqueta}. Motivo: ${motivo}`, 
+            userProfile?.nome || 'Sistema',
+            dest // ID da unidade de destino
+        );
+
+        alert("Movimentação registrada com sucesso!");
+        window.closeModal();
+        window.renderTab("patrimonio");
+
+    } catch (e) {
+        console.error("Erro em confirmarMovPatrimonio:", e);
+        alert("Erro ao movimentar: " + e.message);
+    }
+};
 
 // PEDIDOS
 // 1. Abrir Modal de Criação (Permite selecionar vários itens)
@@ -1706,17 +1870,26 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         }
         htmlItens += `</tbody></table>`;
 
-        // 3. Monta o Seletor de Status (Lógica Nova)
+        // 3. Monta o Seletor de Status (Lógica Modificada para 'comum')
         const statusAtual = pedido.status;
-        
-        // Lista de Status permitidos (Excluindo 'PENDENTE' para seleção)
-        const listaStatus = [
-            { val: 'em_separacao', label: 'EM SEPARAÇÃO' },
-            { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA' }, // <--- Aspa adicionada
-            { val: 'em_transito', label: 'EM TRÂNSITO / SAIU DA UNIDADE' },
-            { val: 'entregue', label: 'ENTREGUE' }
-        ];
+        let listaStatus = [];
+        let mostrarBotaoCancelar = true;
 
+        if (userProfile.nivel === 'comum') {
+            // REGRA: Usuário comum só vê a opção de confirmar entrega
+            listaStatus = [
+                { val: 'entregue', label: 'CONFIRMAR RECEBIMENTO (ENTREGUE)' }
+            ];
+            mostrarBotaoCancelar = false; // Comum não pode cancelar/estornar
+        } else {
+            // REGRA: Admin/Super vê todas as opções normais
+            listaStatus = [
+                { val: 'em_separacao', label: 'EM SEPARAÇÃO' },
+                { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA' },
+                { val: 'em_transito', label: 'EM TRÂNSITO / SAIU DA UNIDADE' },
+                { val: 'entregue', label: 'ENTREGUE' }
+            ];
+        }        
         let opcoesStatus = '';
         listaStatus.forEach(opt => {
             // Marca como selecionado se for o status atual
@@ -1787,23 +1960,55 @@ window.atualizarStatusPeloSelect = async function(pedidoId) {
 
     if(!novoStatus) return;
 
-    // Confirmação simples
     if(!confirm(`Deseja alterar o status para "${novoStatus}"?`)) return;
 
+    // Feedback visual
+    const btnSalvar = document.querySelector('#modal-content-area .btn-confirmar');
+    const textoOriginal = btnSalvar ? btnSalvar.innerText : 'Salvar';
+    if(btnSalvar) {
+        btnSalvar.innerText = "Processando...";
+        btnSalvar.disabled = true;
+    }
+
     try {
-        const { error } = await supabase
+        // --- MUDANÇA AQUI: Usamos maybeSingle() ---
+        const { data, error } = await supabase
             .from('pedidos')
             .update({ status: novoStatus })
-            .eq('id', pedidoId);
+            .eq('id', pedidoId)
+            .select('id, unidade_destino_id') 
+            .maybeSingle(); // Retorna null em vez de erro se não atualizar nada
 
-        if(error) throw error;
+        if (error) throw error;
 
-        alert("Status atualizado com sucesso!");
+        // Se data for null, significa que o RLS bloqueou ou o ID não existe
+        if (!data) {
+            alert("PERMISSÃO NEGADA: O banco de dados recusou a atualização.\n\nVerifique se existe uma Policy (RLS) no Supabase permitindo UPDATE na tabela 'pedidos' para este usuário.");
+            return; // Para aqui
+        }
+
+        // Se chegou aqui, atualizou com sucesso. Grava histórico:
+        await registrarHistorico(
+            null, 
+            0, 
+            'RECEBIMENTO_PEDIDO', 
+            `Status alterado para: ${novoStatus.toUpperCase()}. Pedido #${pedidoId}`, 
+            userProfile?.nome || 'Usuário',
+            data.unidade_destino_id 
+        );
+
+        alert("Sucesso! Status atualizado.");
         window.closeModal();
-        window.renderTab('pedidos'); // Atualiza a tabela no fundo
+        window.renderTab('pedidos');
 
     } catch (e) {
-        alert("Erro ao atualizar: " + e.message);
+        console.error(e);
+        alert("Erro técnico: " + e.message);
+    } finally {
+        if(btnSalvar) {
+            btnSalvar.innerText = textoOriginal;
+            btnSalvar.disabled = false;
+        }
     }
 }
 
@@ -1957,3 +2162,6 @@ window.gerarRelatorioPDF = async function(tipo) {
 
 // Fim do Script
 console.log("Sistema carregado com sucesso (v2.0 Refatorado)");
+
+
+
