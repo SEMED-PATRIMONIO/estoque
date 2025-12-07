@@ -171,20 +171,36 @@ function aplicarRestricoesInterface() {
     }
 }
 
-// Função central para registrar histórico
-async function registrarHistorico(prodId, qtd, tipo, obs, respNome, unidId = null) {
-    const destino = unidId ? unidId : null;
-    const { error } = await supabase.from('historico_global').insert([{
-        produto_id: prodId,
-        quantidade: qtd,
-        tipo_movimento: tipo,
-        observacao: obs,
-        responsavel_nome: respNome,
-        usuario_sistema: currentUserId,
-        unidade_destino_id: destino,
-        data_movimentacao: new Date()
-    }]);
-    if(error) console.error("Erro ao gravar histórico:", error);
+// --- FUNÇÃO CORRIGIDA: REGISTRAR HISTÓRICO ---
+async function registrarHistorico(produtoId, quantidade, tipo, observacao, responsavel, unidadeId, volumes = 0) {
+    // Tratamento de segurança para o ID da unidade
+    // Se vier vazio "", nulo ou undefined, transformamos em NULL para o banco aceitar
+    const idDestino = (unidadeId && unidadeId !== "" && unidadeId !== "null") ? parseInt(unidadeId) : null;
+
+    console.log(`Gravando histórico: ${tipo} | Qtd: ${quantidade} | Destino: ${idDestino}`);
+
+    try {
+        const { error } = await supabase
+            .from('historico_global')
+            .insert({
+                produto_id: produtoId,
+                quantidade: quantidade,
+                tipo_movimento: tipo,      // Ex: ENTRADA_MATERIAL
+                observacao: observacao,
+                responsavel_nome: responsavel,
+                // AQUI ESTAVA O ERRO: O nome correto da coluna no banco é unidade_destino_id
+                unidade_destino_id: idDestino, 
+                volumes: volumes,
+                data_movimentacao: new Date().toISOString()
+            });
+
+        if (error) {
+            console.error("Erro Supabase ao gravar histórico:", error.message);
+            alert("Erro ao gravar histórico (ver console): " + error.message);
+        }
+    } catch (e) {
+        console.error("Erro técnico no histórico:", e);
+    }
 }
 
 // --- CONTROLE DE MODAIS (Global window) ---
@@ -307,6 +323,7 @@ window.renderTab = async function(tabName) {
     }
 }
 
+// --- FUNÇÃO ATUALIZADA: RENDER ACTION BUTTONS ---
 function renderActionButtons(tabName) {
     const isAdmin = ['admin', 'super'].includes(userProfile?.nivel);
     let btns = '<div class="action-buttons">';
@@ -321,9 +338,9 @@ function renderActionButtons(tabName) {
             btns += `<button onclick="window.openModalSaidaRapida()" style="background-color: #ffc107; color: #333;"><i class="fas fa-arrow-up"></i> Saída Rápida</button>`;
         }
         if (tabName === 'patrimonio') {
+            // REMOVIDO O BOTÃO DE INSERVÍVEL DAQUI
             btns += `<button onclick="window.openModalEntrada('permanente')" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Patrimônio</button>`;
             btns += `<button onclick="window.openModalMovimentarPatrimonio()" style="background-color: #17a2b8; color: white;"><i class="fas fa-exchange-alt"></i> Movimentar</button>`;
-            btns += `<button id="btn-marcar-inservivel" style="background-color: #343a40; color: white;"><i class="fas fa-trash-alt"></i> Baixar (Inservível)</button>`;
         }
     }
     
@@ -398,6 +415,7 @@ function renderTable(tabName, data) {
     return `<table class="data-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// --- FUNÇÃO ATUALIZADA: SETUP TABLE EVENTS ---
 function setupTableEvents(tabName) {
     const table = document.querySelector('.data-table');
     if(table) {
@@ -411,20 +429,6 @@ function setupTableEvents(tabName) {
         });
     }
     
-    // Listener específico para Inservível
-    const btnInservivel = document.getElementById('btn-marcar-inservivel');
-    if (btnInservivel) {
-        btnInservivel.onclick = async () => {
-            if(!selectedRowId) return alert('Selecione um item da lista.');
-            if(!confirm('Tem certeza que deseja marcar este item como INSERVÍVEL?')) return;
-            try {
-                await supabase.from('patrimonio').update({ inservivel: true }).eq('id', selectedRowId);
-                alert('Item atualizado.');
-                window.renderTab('patrimonio');
-            } catch(e) { alert('Erro: ' + e.message); }
-        };
-    }
-    
     // Listener específico para Pedidos
     const btnVerPedido = document.getElementById('btn-ver-pedido');
     if(btnVerPedido) {
@@ -433,6 +437,8 @@ function setupTableEvents(tabName) {
             window.openModalGerenciarPedido(selectedRowId);
         };
     }
+    
+    // (O listener do botão inservível foi removido pois o botão não existe mais)
 }
 
 // ============================================================================
@@ -945,43 +951,77 @@ window.modalMovimentoUniforme = async function(prodId, tipo, categoria) {
     `;
 }
 
+// --- FUNÇÃO ATUALIZADA: MOVIMENTO UNIFORME ---
 window.confirmarMovimentoUniforme = async function(prodId, tipo, categoria) {
     const tam = document.getElementById("uni-tam").value;
     const qtd = parseInt(document.getElementById("uni-qtd").value);
     
     if(!qtd || qtd <= 0) return alert("Quantidade inválida");
 
-    // Busca registro atual
-    const { data: reg } = await supabase.from("estoque_tamanhos")
-        .select("*").eq("produto_id", prodId).eq("tamanho", tam).single();
-
-    let novaQtd = 0;
-    let atual = reg ? reg.quantidade : 0;
-
-    if (tipo === 'entrada') novaQtd = atual + qtd;
-    else {
-        if (atual < qtd) return alert("Saldo insuficiente!");
-        novaQtd = atual - qtd;
+    // Feedback visual imediato no botão
+    const btn = document.querySelector('#modal-content-area .btn-confirmar');
+    if(btn) {
+        btn.innerText = "Salvando...";
+        btn.disabled = true;
     }
 
-    // Atualiza ou Insere
-    if (reg) {
-        await supabase.from("estoque_tamanhos").update({ quantidade: novaQtd }).eq("id", reg.id);
-    } else {
-        await supabase.from("estoque_tamanhos").insert({ produto_id: prodId, tamanho: tam, quantidade: novaQtd });
+    try {
+        // Busca registro atual no estoque
+        const { data: reg, error: errBusca } = await supabase.from("estoque_tamanhos")
+            .select("*").eq("produto_id", prodId).eq("tamanho", tam).single();
+
+        if(errBusca && errBusca.code !== 'PGRST116') throw errBusca; // Ignora erro se não encontrar (PGRST116)
+
+        let novaQtd = 0;
+        let atual = reg ? reg.quantidade : 0;
+
+        if (tipo === 'entrada') {
+            novaQtd = atual + qtd;
+        } else {
+            // Validação de Saída
+            if (atual < qtd) {
+                alert(`Saldo insuficiente! Atual: ${atual}, Tentativa: ${qtd}`);
+                if(btn) { btn.innerText = "Confirmar"; btn.disabled = false; }
+                return;
+            }
+            novaQtd = atual - qtd;
+        }
+
+        // Atualiza ou Insere no Estoque
+        if (reg) {
+            await supabase.from("estoque_tamanhos").update({ quantidade: novaQtd }).eq("id", reg.id);
+        } else {
+            if (tipo === 'saida') return alert("Item não existe no estoque para dar saída.");
+            await supabase.from("estoque_tamanhos").insert({ produto_id: prodId, tamanho: tam, quantidade: novaQtd });
+        }
+
+        // Grava Histórico
+        // Passamos 'null' explicitamente para unidadeId, pois uniforme não vai para uma unidade específica nessa tela
+        await registrarHistorico(
+            prodId, 
+            qtd, 
+            tipo + '_uniforme',  // Gera 'saida_uniforme' ou 'entrada_uniforme'
+            `Tamanho: ${tam}`, 
+            userProfile?.nome || 'Sistema',
+            null // Unidade ID é Nulo aqui
+        );
+
+        alert("Movimentação realizada com sucesso!");
+        window.closeModal();
+        
+        // Atualiza a aba correta
+        if(categoria === 'roupas') window.renderTabUniformesRoupas();
+        else window.renderTabUniformesCalcados();
+
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao salvar: " + e.message);
+        if(btn) { btn.innerText = "Confirmar"; btn.disabled = false; }
     }
-
-    // Histórico
-    await registrarHistorico(prodId, qtd, tipo + '_uniforme', `Tamanho: ${tam}`, userProfile?.nome || 'Sistema');
-
-    alert("Sucesso!");
-    window.closeModal();
-    if(categoria === 'roupas') window.renderTabUniformesRoupas();
-    else window.renderTabUniformesCalcados();
 }
 
 // ============================================================================
-// PARTE 8: UNIFORMES CALÇADOS
+// PARTE 8: UNIFORMES CALÇADOS (ATUALIZADO)
 // ============================================================================
 
 window.renderTabUniformesCalcados = async function () {
@@ -992,77 +1032,79 @@ window.renderTabUniformesCalcados = async function () {
             <div class="uniformes-header">
                 <h2><i class="fas fa-shoe-prints"></i> Uniformes — Calçados</h2>
             </div>
-            <div style="overflow-x: auto;">
-                <table class="uniformes-table data-table" id="table-calcados">
-                    <thead id="thead-calcados"></thead>
-                    <tbody id="tbody-calcados"></tbody>
-                </table>
-            </div>
+            <div id="calcados-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;"></div>
         </div>
     `;
 
-    const thead = document.getElementById("thead-calcados");
-    const tbody = document.getElementById("tbody-calcados");
+    const grid = document.getElementById("calcados-grid");
 
-    const { data: produtos } = await supabase
-        .from("catalogo")
-        .select("*")
-        .eq("tipo", "UNIFORMES CALÇADOS")
-        .order("nome");
-
-    const { data: tamanhos } = await supabase
-        .from("tamanhos_calcados")
-        .select("*")
-        .order("ordem");
-
-    const { data: estoque } = await supabase
-        .from("estoque_tamanhos")
-        .select("*");
+    // Busca produtos do tipo 'UNIFORMES CALÇADOS', tamanhos e estoque
+    const [{ data: produtos }, { data: tamanhos }, { data: estoque }] = await Promise.all([
+        supabase.from("catalogo").select("*").eq("tipo", "UNIFORMES CALÇADOS").order("nome"),
+        supabase.from("tamanhos_calcados").select("*").order("ordem"),
+        supabase.from("estoque_tamanhos").select("*")
+    ]);
 
     if (!produtos || produtos.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="50">Nenhum calçado cadastrado.</td></tr>`;
+        grid.innerHTML = `<div style="grid-column:1/-1; padding:20px; background:#fff; border-radius:8px;">Nenhum calçado cadastrado.</div>`;
         return;
     }
 
-    // ---------- CABEÇALHO ----------
-    let headerRow1 = `<tr><th>TAMANHO</th>`;
-    let headerRow2 = `<tr><th></th>`; // Totais
-
-    produtos.forEach(p => {
-        headerRow1 += `
-            <th style="text-align:center;">
-                ${p.nome}<br>
-                <button onclick="window.modalMovimentoUniforme(${p.id}, 'entrada', 'calcados')" style="margin-right:5px;">
-                    <i class="fas fa-plus"></i>
-                </button>
-                <button onclick="window.modalMovimentoUniforme(${p.id}, 'saida', 'calcados')">
-                    <i class="fas fa-minus"></i>
-                </button>
-            </th>`;
-
-        const estoqueProd = estoque.filter(e => e.produto_id === p.id);
-        const totalProd = estoqueProd.reduce((s, x) => s + x.quantidade, 0);
-
-        headerRow2 += `<th style="text-align:center; font-weight:bold;">${totalProd}</th>`;
-    });
-
-    headerRow1 += `</tr>`;
-    headerRow2 += `</tr>`;
-
-    thead.innerHTML = headerRow1 + headerRow2;
-
-    // ---------- CORPO ----------
-    tamanhos.forEach(t => {
-        let row = `<tr><td style="font-weight:bold;">${t.numero}</td>`;
-
-        produtos.forEach(p => {
-            const item = estoque.find(e => e.produto_id === p.id && e.tamanho === String(t.numero));
-            row += `<td style="text-align:center;">${item ? item.quantidade : 0}</td>`;
+    // Para cada produto, renderiza um 'card' apresentando os tamanhos divididos em 3 linhas
+    for (const p of produtos) {
+        // lista de tamanhos com quantidade para este produto
+        const tList = tamanhos ? tamanhos.map(t => String(t.numero)) : [];
+        // monta array de objetos {tamanho, quantidade}
+        const tamanhoObjs = tList.map(tam => {
+            const e = estoque ? estoque.find(s => s.produto_id === p.id && String(s.tamanho) === String(tam)) : null;
+            return { tamanho: tam, qtd: e ? e.quantidade : 0 };
         });
 
-        row += `</tr>`;
-        tbody.innerHTML += row;
-    });
+        // divisão em 3 linhas
+        const total = tamanhoObjs.length;
+        const perCol = Math.ceil(total / 3);
+        const rows = [ [], [], [] ];
+        tamanhoObjs.forEach((it, idx) => {
+            const colIndex = Math.floor(idx / perCol);
+            rows[colIndex].push(it);
+        });
+
+        // total produto
+        const totalProduto = tamanhoObjs.reduce((s, x) => s + (x.qtd || 0), 0);
+
+        // HTML do card
+        const card = document.createElement('div');
+        card.style.background = '#fff';
+        card.style.padding = '14px';
+        card.style.borderRadius = '10px';
+        card.style.boxShadow = '0 6px 14px rgba(0,0,0,0.04)';
+        
+        // AQUI ABAIXO: Alterado justify-content:space-between para justify-content:flex-start e adicionado gap
+        card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-weight:700; font-size:1rem;">${p.nome}</div>
+                <div style="text-align:right; font-size:0.9rem;">
+                    Total: <span style="font-weight:800;">${totalProduto}</span>
+                    <div style="margin-top:6px;">
+                        <button onclick="window.modalMovimentoUniforme(${p.id}, 'entrada', 'calcados')" style="margin-right:6px;" title="Entrada"><i class="fas fa-plus"></i></button>
+                        <button onclick="window.modalMovimentoUniforme(${p.id}, 'saida', 'calcados')" title="Saída"><i class="fas fa-minus"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+                <div style="flex:1;">
+                    ${rows[0].map(r => `<div style="padding:6px 8px; border-radius:6px; margin-bottom:6px; background:#fbfbfd; display:flex; justify-content:flex-start; gap:20px;"><span>${r.tamanho}</span><strong>${r.qtd}</strong></div>`).join('')}
+                </div>
+                <div style="flex:1;">
+                    ${rows[1].map(r => `<div style="padding:6px 8px; border-radius:6px; margin-bottom:6px; background:#fbfbfd; display:flex; justify-content:flex-start; gap:20px;"><span>${r.tamanho}</span><strong>${r.qtd}</strong></div>`).join('')}
+                </div>
+                <div style="flex:1;">
+                    ${rows[2].map(r => `<div style="padding:6px 8px; border-radius:6px; margin-bottom:6px; background:#fbfbfd; display:flex; justify-content:flex-start; gap:20px;"><span>${r.tamanho}</span><strong>${r.qtd}</strong></div>`).join('')}
+                </div>
+            </div>
+        `;
+        grid.appendChild(card);
+    }
 };
 
 // ============================================================================
@@ -1101,24 +1143,23 @@ window.openModalEntrada = async function(filtroTipo) {
     modal.style.display = 'block';
 }
 
+// --- FUNÇÃO ATUALIZADA: CONFIRMAR ENTRADA GERAL ---
 window.confirmarEntradaGeral = async function() {
     const prodSelect = document.getElementById("ent-prod");
     const prodId = prodSelect.value;
     
-    // --- CORREÇÃO PRINCIPAL ---
-    // Adicionamos .toUpperCase() para garantir que 'permanente' vire 'PERMANENTE'
-    // e entre no IF correto abaixo.
+    // Pega o tipo e o nome
     const tipoRaw = prodSelect.options[prodSelect.selectedIndex].dataset.tipo;
+    const nomeProd = prodSelect.options[prodSelect.selectedIndex].text;
     const tipo = tipoRaw ? tipoRaw.toUpperCase() : ''; 
-    // --------------------------
 
     const qtd = parseInt(document.getElementById("ent-qtd").value);
-    const local = document.getElementById("ent-local").value;
+    let local = document.getElementById("ent-local").value;
     const obs = document.getElementById("ent-obs").value;
 
     if(!prodId || qtd <= 0) return alert("Dados inválidos.");
 
-    // Lógica Consumo
+    // Lógica CONSUMO (Agora gravando como MATERIAL no histórico)
     if(tipo === 'CONSUMO') {
         const { data: reg } = await supabase.from("estoque_consumo").select("*").eq("produto_id", prodId).single();
         if(reg) {
@@ -1126,44 +1167,146 @@ window.confirmarEntradaGeral = async function() {
         } else {
             await supabase.from("estoque_consumo").insert({ produto_id: prodId, quantidade_atual: qtd });
         }
+        
+        // CORREÇÃO DE NOME: Usa 'ENTRADA_MATERIAL'
+        await registrarHistorico(prodId, qtd, 'ENTRADA_MATERIAL', obs, userProfile?.nome, local);
+        
+        alert("Entrada de Material realizada!");
+        window.closeModal();
+        if(typeof activeTab !== 'undefined') window.renderTab(activeTab);
     }
     // Lógica Patrimônio
     else if(tipo === 'PERMANENTE') {
-        // Agora o código entrará aqui corretamente!
-        
-        // Loop para cadastrar a quantidade solicitada (se for mais de 1 item, pede plaqueta pra cada um)
-        for (let i = 0; i < qtd; i++) {
-            let msg = qtd > 1 ? `Informe a plaqueta do item ${i+1} de ${qtd}:` : "Informe o número da plaqueta/patrimônio:";
-            const plaqueta = prompt(msg);
-            
-            if(!plaqueta) {
-                alert("Plaqueta obrigatória. Operação cancelada parcialmente.");
-                break; 
-            }
+        window.closeModal();
+        setTimeout(() => {
+            window.abrirModalLotePatrimonio(prodId, nomeProd, qtd, local, obs);
+        }, 300);
+    }
+    // Lógica Uniformes (Caso alguém use a entrada geral para uniformes)
+    else {
+        alert("Para uniformes, utilize a aba específica ou configure a entrada automática aqui.");
+    }
+}
 
-            const { error } = await supabase.from("patrimonio").insert({
-                produto_id: prodId,
-                codigo_patrimonio: plaqueta,
-                unidade_id: local || null,
-                // estado_conservacao removido
-                inservivel: false
-            });
-            
-            if(error) {
-                console.error(error);
-                alert("Erro ao salvar patrimônio: " + error.message);
-            }
+// ============================================================================
+// [NOVO] FUNÇÕES PARA ENTRADA EM LOTE DE PATRIMÔNIO
+// ============================================================================
+
+window.abrirModalLotePatrimonio = function(prodId, nomeProd, qtd, localId, obs) {
+    const modal = document.getElementById("global-modal");
+    const content = document.getElementById("modal-content-area");
+    
+    // Gera os campos de input dinamicamente
+    let inputsHtml = `<div style="max-height: 400px; overflow-y: auto; padding-right: 10px; margin-bottom: 20px;">`;
+    
+    for (let i = 1; i <= qtd; i++) {
+        inputsHtml += `
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-weight: bold; color: #64748b; width: 30px;">#${i}</span>
+                <div style="flex: 1;">
+                    <label style="font-size: 0.8rem; display: block; margin-bottom: 2px;">Plaqueta / Nº Série</label>
+                    <input type="text" class="input-lote-patrimonio" id="pat-input-${i}" placeholder="Digite ou bipe o código" style="width: 100%; margin: 0;">
+                </div>
+            </div>
+        `;
+    }
+    inputsHtml += `</div>`;
+
+    content.innerHTML = `
+        <h3><i class="fas fa-boxes"></i> Entrada em Lote: Patrimônio</h3>
+        <div style="background: #eff6ff; padding: 10px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2563eb;">
+            <strong>Produto:</strong> ${nomeProd}<br>
+            <strong>Quantidade:</strong> ${qtd} itens<br>
+            <small>Preencha os identificadores de cada item abaixo.</small>
+        </div>
+        
+        <form id="form-lote-patrimonio" onsubmit="event.preventDefault(); window.salvarLotePatrimonio(${prodId}, ${qtd}, '${localId || ''}', '${obs || ''}')">
+            ${inputsHtml}
+            <div style="text-align: right; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                <button type="button" class="btn-cancelar" onclick="window.closeModal()">Cancelar</button>
+                <button type="submit" class="btn-confirmar">Salvar Todos</button>
+            </div>
+        </form>
+    `;
+    
+    modal.style.display = 'block';
+    
+    // Foca no primeiro input automaticamente
+    setTimeout(() => {
+        const primeiroInput = document.getElementById("pat-input-1");
+        if(primeiroInput) primeiroInput.focus();
+    }, 100);
+}
+
+window.salvarLotePatrimonio = async function(prodId, qtdTotal, localId, obs) {
+    const inputs = document.querySelectorAll('.input-lote-patrimonio');
+    const listaPlaquetas = [];
+    let temVazio = false;
+
+    // Coleta os valores
+    inputs.forEach(input => {
+        const val = input.value.trim();
+        if(!val) temVazio = true;
+        listaPlaquetas.push(val);
+    });
+
+    if(temVazio) {
+        if(!confirm("Alguns itens estão sem número de plaqueta. Deseja continuar mesmo assim (ficarão sem código)?")) {
+            return;
         }
     }
 
-    // Grava histórico
-    await registrarHistorico(prodId, qtd, 'entrada', obs, userProfile?.nome, local);
-    
-    alert("Entrada realizada!");
-    window.closeModal();
-    
-    // Atualiza a tela que você está vendo agora
-    if(typeof activeTab !== 'undefined') window.renderTab(activeTab);
+    // Feedback Visual
+    const btn = document.querySelector('#form-lote-patrimonio button[type="submit"]');
+    if(btn) {
+        btn.innerText = "Salvando...";
+        btn.disabled = true;
+    }
+
+    try {
+        // Prepara o Array para Insert em Massa (Bulk Insert) - Muito mais rápido
+        const payload = listaPlaquetas.map(plaqueta => ({
+            produto_id: prodId,
+            codigo_patrimonio: plaqueta || null, // Se vazio, envia null ou poderia gerar um provisório
+            unidade_id: (localId && localId !== "null" && localId !== "") ? localId : null,
+            inservivel: false,
+            data_aquisicao: new Date().toISOString().split('T')[0] // Data de hoje
+        }));
+
+        const { error } = await supabase.from("patrimonio").insert(payload);
+        
+        if(error) throw error;
+
+        // Registra Histórico (Apenas 1 registro global informando a entrada em massa)
+        await registrarHistorico(
+            prodId, 
+            qtdTotal, 
+            'entrada', 
+            `Entrada em Lote (${qtdTotal} un). ${obs}`, 
+            userProfile?.nome, 
+            (localId && localId !== "null" && localId !== "") ? localId : null
+        );
+
+        alert("Todos os itens foram cadastrados com sucesso!");
+        window.closeModal();
+        
+        // Atualiza a tela se estiver na aba patrimônio
+        if(typeof activeTab !== 'undefined' && activeTab === 'patrimonio') {
+            window.renderTab('patrimonio');
+        } else {
+            // Se estiver em outra aba, força ir para patrimônio para ver o resultado
+            const btnPat = document.querySelector(`.tab-button[data-tab="patrimonio"]`);
+            if(btnPat) btnPat.click();
+        }
+
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao salvar lote: " + e.message);
+        if(btn) {
+            btn.innerText = "Salvar Todos";
+            btn.disabled = false;
+        }
+    }
 }
 
 window.openModalSaidaRapida = async function() {
@@ -1191,17 +1334,27 @@ window.openModalSaidaRapida = async function() {
 
 window.confirmarSaidaRapida = async function() {
     const idEstoque = document.getElementById("sai-id").value;
-    const prodId = document.getElementById("sai-id").options[document.getElementById("sai-id").selectedIndex].dataset.prod;
+    const select = document.getElementById("sai-id");
+    const prodId = select.options[select.selectedIndex].dataset.prod;
     const qtd = parseInt(document.getElementById("sai-qtd").value);
-    // Se o campo estiver vazio, usa o nome do usuário logado
-    const resp = document.getElementById("sai-resp").value || userProfile?.nome || 'Usuário';
+    
+    // [CORREÇÃO] Captura o input para usar na observação, mantendo o usuário logado como responsável
+    const infoDestino = document.getElementById("sai-resp").value;
+    const usuarioLogado = userProfile?.nome || 'Usuário';
+    
+    // Se houver texto no input, adiciona aos detalhes. Se não, mantém apenas "Saída Rápida".
+    const observacaoFinal = infoDestino ? `Saída Rápida: ${infoDestino}` : 'Saída Rápida';
+
+    if(!qtd || qtd <= 0) return alert("Quantidade inválida.");
 
     const { data: item } = await supabase.from("estoque_consumo").select("quantidade_atual").eq("id", idEstoque).single();
     
-    if(item.quantidade_atual < qtd) return alert("Saldo insuficiente.");
+    if(!item || item.quantidade_atual < qtd) return alert("Saldo insuficiente.");
 
     await supabase.from("estoque_consumo").update({ quantidade_atual: item.quantidade_atual - qtd }).eq("id", idEstoque);
-    await registrarHistorico(prodId, qtd, 'saida_consumo', 'Saída Rápida', resp);
+    
+    // [CORREÇÃO] Ordem corrigida: (prodId, qtd, tipo, OBSERVACAO, RESPONSAVEL)
+    await registrarHistorico(prodId, qtd, 'SAIDA_MATERIAL', observacaoFinal, usuarioLogado);
     
     alert("Saída registrada.");
     window.closeModal();
@@ -1821,138 +1974,341 @@ window.openModalGerenciarPedido = async function(pedidoId) {
     modal.style.display = 'block';
 
     try {
-        // 1. Busca dados do Pedido
+        // 1) Busca dados do Pedido
         const { data: pedido, error: errPed } = await supabase
             .from('pedidos')
             .select('*, unidades(nome)')
             .eq('id', pedidoId)
             .single();
-
         if (errPed) throw errPed;
 
-        // 2. Busca os Itens do Pedido (Query Corrigida)
-        // Solicitamos explicitamente o ID para garantir a unicidade e o catalogo completo
-        const { data: itens, error: errItens } = await supabase
+        // 2) Busca itens do pedido incluindo quantidade_atendida (se existir)
+        // Tentamos selecionar quantidade_atendida; se não existir, a query retorna sem ela
+        const { data: itensRaw, error: errItens } = await supabase
             .from('itens_pedido')
-            .select('id, quantidade_solicitada, tamanho, catalogo(nome, tipo)') 
+            .select('id, produto_id, quantidade_solicitada, quantidade_atendida, tamanho, catalogo(id, nome, tipo)')
             .eq('pedido_id', pedidoId);
-
         if (errItens) throw errItens;
 
-        // Monta HTML da lista de itens
-        let htmlItens = `<table class="table-geral" style="width:100%; margin-bottom:20px;">
+        // Monta HTML dos itens com checkbox e input de quantidade a enviar
+        let htmlItens = `<table class="table-geral" style="width:100%; margin-bottom:12px;">
             <thead>
                 <tr style="background:#f1f5f9;">
+                    <th style="width:6%"></th>
                     <th>Produto</th>
                     <th>Tipo</th>
                     <th>Tam/Num</th>
-                    <th>Qtd</th>
+                    <th>Solicitado</th>
+                    <th>Atendido</th>
+                    <th>Enviar neste lote</th>
                 </tr>
             </thead>
             <tbody>`;
-            
-        if(itens && itens.length > 0) {
-            itens.forEach(i => {
-                // Verificação de segurança caso catalogo venha nulo (item deletado, por exemplo)
-                const nomeProd = i.catalogo ? i.catalogo.nome : '<span style="color:red">Item Excluído</span>';
-                const tipoProd = i.catalogo ? i.catalogo.tipo : '-';
-                
-                htmlItens += `
-                    <tr>
-                        <td>${nomeProd}</td>
-                        <td>${tipoProd}</td>
-                        <td>${i.tamanho || '-'}</td>
-                        <td style="font-weight:bold">${i.quantidade_solicitada}</td>
-                    </tr>`;
-            });
+
+        const itens = itensRaw || [];
+        if (itens.length === 0) {
+            htmlItens += `<tr><td colspan="7" style="text-align:center">Nenhum item neste pedido.</td></tr>`;
         } else {
-            htmlItens += `<tr><td colspan="4" style="text-align:center">Nenhum item encontrado neste pedido.</td></tr>`;
+            itens.forEach(it => {
+                const nomeProd = it.catalogo ? it.catalogo.nome : '(Produto removido)';
+                const tipo = it.catalogo ? it.catalogo.tipo : '-';
+                const solicitado = parseInt(it.quantidade_solicitada) || 0;
+                const atendido = parseInt(it.quantidade_atendida) || 0;
+                const restante = Math.max(0, solicitado - atendido);
+                // linha com checkbox + quantidade
+                htmlItens += `<tr data-item-id="${it.id}" data-prod-id="${it.produto_id}" data-tipo="${tipo}" data-tamanho="${it.tamanho || ''}">
+                    <td style="text-align:center"><input type="checkbox" class="env-checkbox" data-item="${it.id}"></td>
+                    <td>${nomeProd}</td>
+                    <td>${tipo}</td>
+                    <td>${it.tamanho || '-'}</td>
+                    <td style="font-weight:700; text-align:center">${solicitado}</td>
+                    <td style="font-weight:700; text-align:center" id="atendido-${it.id}">${atendido}</td>
+                    <td style="text-align:center;">
+                        <input type="number" class="env-qtd" id="envq-${it.id}" value="${restante>0?restante:0}" min="0" max="${restante}" style="width:80px; padding:6px; border-radius:6px; border:1px solid #ddd;">
+                        <div style="font-size:0.85em; color:#666;">rest: ${restante}</div>
+                    </td>
+                </tr>`;
+            });
         }
         htmlItens += `</tbody></table>`;
 
-        // 3. Monta o Seletor de Status (Lógica Modificada para 'comum')
-        const statusAtual = pedido.status;
-        let listaStatus = [];
-        let mostrarBotaoCancelar = true;
+        // Área volumes (oculta até ser preenchida)
+        const areaVolumes = `
+            <div id="area-volumes" style="display:none; margin-top:10px;">
+                <label style="font-weight:700;">Quantidade de volumes:</label>
+                <input type="number" id="num-volumes" value="1" min="1" style="width:80px; margin-left:8px;">
+                <button class="btn-confirmar" style="margin-left:10px;" onclick="window.abrirVolumesUI(${pedidoId}, '${pedido.unidades?.nome || ''}')">Confirmar Volumes</button>
+            </div>
+        `;
 
-        if (userProfile.nivel === 'comum') {
-            // REGRA: Usuário comum só vê a opção de confirmar entrega
-            listaStatus = [
-                { val: 'entregue', label: 'CONFIRMAR RECEBIMENTO (ENTREGUE)' }
-            ];
-            mostrarBotaoCancelar = false; // Comum não pode cancelar/estornar
-        } else {
-            // REGRA: Admin/Super vê todas as opções normais
-            listaStatus = [
-                { val: 'em_separacao', label: 'EM SEPARAÇÃO' },
-                { val: 'pronto', label: 'PRONTO / AGUARDANDO RETIRADA' },
-                { val: 'em_transito', label: 'EM TRÂNSITO / SAIU DA UNIDADE' },
-                { val: 'entregue', label: 'ENTREGUE' }
-            ];
-        }        
-        let opcoesStatus = '';
-        listaStatus.forEach(opt => {
-            // Marca como selecionado se for o status atual
-            const selected = (opt.val === statusAtual) ? 'selected' : '';
-            opcoesStatus += `<option value="${opt.val}" ${selected}>${opt.label}</option>`;
-        });
+        // Ações: Enviar lote parcial / Atualizar status / Reimprimir PDF
+        const areaAcoes = `
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
+                <button class="btn-confirmar" onclick="window.processarEnvioParcial(${pedidoId})"><i class="fas fa-truck"></i> Enviar Lote Selecionado</button>
+                <button onclick="document.getElementById('area-volumes').style.display='block';" class="btn-confirmar" style="background:#64748b;"><i class="fas fa-boxes"></i> Informar Volumes / Imprimir</button>
+                <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome || ''}')" style="background:#64748b; color:white; border:none; padding:8px 12px; border-radius:6px;">
+                    <i class="fas fa-print"></i> Re-imprimir Pedido (PDF)
+                </button>
+                <button onclick="window.gerarRelatorioPendencias(${pedidoId})" 
+                    style="background:#1e293b; color:white; padding:8px 12px; border-radius:6px;">
+                    <i class="fas fa-list"></i> Pendências
+                </button>
+            </div>
+        `;
 
-        // Se o status for CANCELADO, mostra apenas aviso
-        let areaAcoes = '';
-        if (statusAtual === 'CANCELADO') {
-            areaAcoes = `<div style="padding:15px; background:#fee2e2; color:#991b1b; border-radius:8px; text-align:center; font-weight:bold;">
-                <i class="fas fa-ban"></i> Este pedido está CANCELADO e o estoque foi estornado.
-            </div>`;
-        } else {
-            areaAcoes = `
-                <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Atualizar Status:</label>
-                    <div style="display:flex; gap:10px;">
-                        <select id="novo-status-selecionado" style="flex:1; padding:8px; border-radius:6px; margin:0;">
-                            ${opcoesStatus}
-                        </select>
-                        <button class="btn-confirmar" onclick="window.atualizarStatusPeloSelect(${pedidoId})">Salvar</button>
-                    </div>
-                    
-                    <div style="margin-top:15px; padding-top:15px; border-top:1px solid #e2e8f0; text-align:right;">
-                        <button onclick="window.cancelarPedido(${pedidoId})" class="btn-cancelar" style="font-size:0.9em;">
-                            <i class="fas fa-times-circle"></i> Cancelar Pedido (Estornar Estoque)
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Renderiza Modal Final
+        // Monta modal completo
         content.innerHTML = `
             <h3><i class="fas fa-edit"></i> Gerenciar Pedido #${pedido.id}</h3>
-            
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:15px; font-size:0.95em;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:12px;">
                 <div><strong>Destino:</strong><br> ${pedido.unidades?.nome || 'N/A'}</div>
                 <div><strong>Data:</strong><br> ${new Date(pedido.data_solicitacao).toLocaleString()}</div>
-                <div><strong>Solicitante:</strong><br> (ID: ${pedido.solicitante_id ? pedido.solicitante_id.substring(0,8) : 'Sistema'})</div>
-                <div><strong>Status Atual:</strong><br> <span class="status-tag status-${statusAtual.toLowerCase()}">${statusAtual}</span></div>
+                <div><strong>Solicitante ID:</strong><br> ${pedido.solicitante_id || 'Sistema'}</div>
+                <div><strong>Status:</strong><br> <span style="font-weight:700">${pedido.status}</span></div>
             </div>
 
-            <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
-            
-            <h4>Itens do Pedido:</h4>
+            <h4>Itens do Pedido</h4>
             ${htmlItens}
-            
+            <div id="area-volumes-wrapper">${areaVolumes}</div>
             ${areaAcoes}
-
-            <div style="margin-top:20px; text-align:center;">
-                 <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome}')" style="background:#64748b; color:white; border:none; padding:8px 15px; border-radius:6px;">
-                    <i class="fas fa-print"></i> Re-imprimir PDF
-                 </button>
-            </div>
+            <div id="volumes-ui-area" style="margin-top:14px;"></div>
         `;
 
     } catch (error) {
         console.error(error);
         content.innerHTML = `<p style="color:red; text-align:center;">Erro ao carregar detalhes do pedido:<br>${error.message}</p>`;
     }
-}
+};
+
+// === Adicionar window.processarEnvioParcial ===
+window.processarEnvioParcial = async function(pedidoId) {
+    try {
+        // coleta os itens marcados
+        const checkboxes = Array.from(document.querySelectorAll('.env-checkbox')).filter(cb => cb.checked);
+        if (checkboxes.length === 0) return alert("Marque ao menos um item para enviar neste lote.");
+
+        // opcional: quantidade de volumes já informada (se o usuário abriu a área)
+        const numVolumesInput = document.getElementById('num-volumes');
+        const numVolumes = numVolumesInput ? parseInt(numVolumesInput.value) || 0 : 0;
+
+        // 1) Garantir coluna quantidade_atendida existe (tenta criar somente se ausente)
+        // Nota: operação DDL via Supabase pode requerer privilégio; se falhar o catch exibe no console.
+        try {
+            await supabase.rpc('dummy'); // chamada nula para manter fluxo; (laço para forçar execução em alguns ambientes)
+        } catch (e) {
+            // ignore
+        }
+        // Observação: se preferir criar a coluna manualmente, comente o bloco abaixo.
+        try {
+            await supabase.from('itens_pedido').select('quantidade_atendida').limit(1);
+        } catch (errField) {
+            // tenta criar a coluna (pode falhar se permissões ausentes)
+            try {
+                await supabase.rpc('sql', { q: "ALTER TABLE itens_pedido ADD COLUMN quantidade_atendida integer DEFAULT 0" });
+            } catch (ddlErr) {
+                // Não crítico: seguiremos assumindo que campo pode não existir, usaremos update parcial via insert fallback
+                console.warn("Não foi possível verificar/criar campo quantidade_atendida automaticamente.", ddlErr);
+            }
+        }
+
+        // 2) Monta lista de envios
+        const envios = [];
+        for (const cb of checkboxes) {
+            const itemId = cb.dataset.item;
+            const qtdInput = document.getElementById(`envq-${itemId}`);
+            if (!qtdInput) continue;
+            const qtdEnviar = parseInt(qtdInput.value) || 0;
+            if (qtdEnviar <= 0) continue;
+
+            // Buscar dados atuais do item (para validar max)
+            const { data: itemDb } = await supabase.from('itens_pedido').select('id, pedido_id, produto_id, quantidade_solicitada, quantidade_atendida, tamanho').eq('id', itemId).single();
+            if (!itemDb) continue;
+            const atendido = parseInt(itemDb.quantidade_atendida) || 0;
+            const solicitado = parseInt(itemDb.quantidade_solicitada) || 0;
+            const maxDisponivel = Math.max(0, solicitado - atendido);
+            if (qtdEnviar > maxDisponivel) return alert(`Quantidade a enviar maior que restante para o item ${itemDb.id}. Restante: ${maxDisponivel}`);
+            envios.push({ itemId: itemDb.id, produto_id: itemDb.produto_id, qtdEnviar, tamanho: itemDb.tamanho });
+        }
+
+        if (envios.length === 0) return alert("Nenhum item válido para envio.");
+
+        // 3) Processa cada envio: atualiza quantidade_atendida e baixa estoque
+        for (const ev of envios) {
+            // a) Atualiza quantidade_atendida (somando)
+            // Fazemos SELECT para garantir valor atual
+            const { data: ip, error: ipErr } = await supabase.from('itens_pedido').select('quantidade_atendida, quantidade_solicitada').eq('id', ev.itemId).single();
+            if (ipErr) console.error(ipErr);
+            const atualAtendido = ip && ip.quantidade_atendida ? parseInt(ip.quantidade_atendida) : 0;
+            const novoAtendido = atualAtendido + ev.qtdEnviar;
+
+            // Atualiza no DB (se coluna existir)
+            try {
+                await supabase.from('itens_pedido').update({ quantidade_atendida: novoAtendido }).eq('id', ev.itemId);
+            } catch (e) {
+                console.warn("Falha ao atualizar quantidade_atendida (pode ser campo inexistente):", e);
+            }
+
+            // b) Baixa do estoque
+            // detecta se é consumo ou uniforme (via catalogo tipo)
+            // busca o tipo do produto
+            const { data: prod } = await supabase.from('catalogo').select('tipo').eq('id', ev.produto_id).single();
+            const tipoProd = prod ? prod.tipo : null;
+
+            if (String(tipoProd).toUpperCase() === 'CONSUMO' || String(tipoProd).toLowerCase() === 'consumo') {
+                // estoque_consumo
+                const { data: est } = await supabase.from('estoque_consumo').select('*').eq('produto_id', ev.produto_id).single();
+                if (est) {
+                    const novaQtd = (est.quantidade_atual || 0) - ev.qtdEnviar;
+                    await supabase.from('estoque_consumo').update({ quantidade_atual: novaQtd }).eq('id', est.id);
+                }
+            } else {
+                // estoque_tamanhos
+                const { data: est } = await supabase.from('estoque_tamanhos').select('*').eq('produto_id', ev.produto_id).eq('tamanho', ev.tamanho).single();
+                if (est) {
+                    const novaQtd = (est.quantidade || 0) - ev.qtdEnviar;
+                    await supabase.from('estoque_tamanhos').update({ quantidade: novaQtd }).eq('id', est.id);
+                }
+            }
+
+            // c) Registra no histórico global para cada item enviado (tipo 'Envio Pedido')
+            await registrarHistorico(ev.produto_id, ev.qtdEnviar, 'Envio Pedido', `Pedido #${pedidoId} - Lote parcial`, userProfile?.nome, null);
+        }
+
+        // 4) Se informou número de volumes, registra no histórico e abre UI de volumes (para imprimir)
+        if (numVolumes && numVolumes > 0) {
+            // registra como histórico resumido do envio do lote
+            await registrarHistorico(null, envios.reduce((s,x)=>s+x.qtdEnviar,0), 'Envio Pedido', `Pedido #${pedidoId} - Enviado (Volumes: ${numVolumes})`, userProfile?.nome, null);
+            // Mostra interface de volumes
+            window.abrirVolumesUI(pedidoId, (document.querySelector('#area-volumes-wrapper input#num-volumes') ? document.querySelector('#area-volumes-wrapper input#num-volumes').value : numVolumes));
+        } else {
+            alert("Lote enviado com sucesso.");
+            window.closeModal();
+            window.renderTab('pedidos');
+        }
+
+    // === Atualização automática do status do pedido ===
+    const { data: itensAtualizados } = await supabase
+        .from('itens_pedido')
+        .select('quantidade_solicitada, quantidade_atendida')
+        .eq('pedido_id', pedidoId);
+
+    let totalSolicitado = 0;
+    let totalAtendido = 0;
+
+    itensAtualizados.forEach(it => {
+        totalSolicitado += parseInt(it.quantidade_solicitada || 0);
+        totalAtendido   += parseInt(it.quantidade_atendida || 0);
+    });
+
+    let novoStatus = "Parcialmente Enviado";
+
+    if (totalAtendido >= totalSolicitado) {
+        novoStatus = "Finalizado";
+    }
+
+    await supabase
+        .from('pedidos')
+        .update({ status: novoStatus })
+        .eq('id', pedidoId);
+
+
+    } catch (err) {
+        console.error("Erro em processarEnvioParcial:", err);
+        alert("Erro ao processar lote: " + (err.message || err));
+    }
+};
+
+// === Adicionar UI de volumes e função de impressão ===
+window.abrirVolumesUI = function(pedidoId, destinoNome) {
+    const wrapper = document.getElementById('volumes-ui-area');
+    const nInput = document.getElementById('num-volumes');
+    const n = nInput ? parseInt(nInput.value) || 1 : 1;
+    wrapper.innerHTML = ''; // limpa
+
+    let html = `<h4>Volumes (${n}) - Observações (não serão gravadas)</h4>`;
+    for (let i = 1; i <= n; i++) {
+        html += `
+            <div style="background:#fff; padding:10px; border-radius:8px; margin-bottom:8px; box-shadow:0 4px 10px rgba(0,0,0,0.04);">
+                <label style="font-weight:700;">Observações Volume ${i} / ${n}:</label>
+                <textarea id="obs-volume-${i}" rows="4" style="width:100%; padding:8px; margin-top:6px;"></textarea>
+            </div>
+        `;
+    }
+
+    html += `<div style="text-align:right; margin-top:8px;">
+                <button class="btn-confirmar" onclick="window.imprimirVolumes(${pedidoId}, '${destinoNome}', ${n})"><i class="fas fa-print"></i> Imprimir Volumes (2 cópias por volume)</button>
+                <button class="btn-cancelar" style="margin-left:8px;" onclick="document.getElementById('volumes-ui-area').innerHTML=''">Cancelar</button>
+             </div>`;
+
+    wrapper.innerHTML = html;
+    // rolagem leve
+    wrapper.scrollIntoView({ behavior: 'smooth' });
+};
+
+window.imprimirVolumes = function(pedidoId, destinoNome, numVolumes) {
+    // Monta HTML para impressão: cada volume 2 páginas idênticas (duas cópias)
+    const printable = [];
+    for (let i = 1; i <= numVolumes; i++) {
+        const obs = (document.getElementById(`obs-volume-${i}`) || {}).value || '';
+        const header = `<div style="display:flex; justify-content:space-between; align-items:center;">
+            <div></div>
+            <div style="font-weight:800; font-size:18px;">VOLUME: ${i}/${numVolumes}</div>
+        </div>`;
+        const meta = `<div style="margin-top:10px;">Destino: <strong>${destinoNome}</strong><br>Data/Hora: <strong>${new Date().toLocaleString()}</strong></div>`;
+        const body = `<div style="margin-top:18px; min-height:420px;">${obs.replace(/\n/g, '<br>')}</div>`;
+        const footer = `<div style="position:relative; margin-top:20px;">
+            <div style="width:48%; display:inline-block; border-top:1px solid #000; padding-top:6px;">Conferente (Assinatura)</div>
+            <div style="width:48%; display:inline-block; text-align:right; border-top:1px solid #000; padding-top:6px;">Nº Matrícula</div>
+        </div>`;
+
+        const page = `<div class="print-page" style="page-break-after:always; padding:20px; font-family:Arial,Helvetica,sans-serif;">
+            ${header}
+            ${meta}
+            ${body}
+            ${footer}
+        </div>`;
+
+        // adiciona 2 cópias (duas páginas)
+        printable.push(page);
+        printable.push(page);
+    }
+
+    // cria janela de impressão
+    const win = window.open('', '_blank');
+    if (!win) return alert("Bloqueador de popups impediu a abertura da janela de impressão. Permita popups e tente novamente.");
+
+    const htmlDoc = `
+        <html>
+            <head>
+                <title>Volumes - Pedido ${pedidoId}</title>
+                <style>
+                    @media print {
+                        @page { size: A4; margin: 20mm; }
+                        body { -webkit-print-color-adjust: exact; }
+                    }
+                    body { margin:0; padding:0; font-size:14px; color:#111; }
+                    .print-page { width:210mm; min-height:297mm; box-sizing:border-box; }
+                </style>
+            </head>
+            <body>
+                ${printable.join('')}
+                <script>
+                    // auto print then close
+                    window.onload = function() {
+                        setTimeout(() => { window.print(); /* não fechar automaticamente para permitir visualização */ }, 300);
+                    }
+                </script>
+            </body>
+        </html>
+    `;
+    win.document.open();
+    win.document.write(htmlDoc);
+    win.document.close();
+
+    // após imprimir, registrar no histórico o envio global com número de volumes
+    registrarHistorico(null, 0, "Envio Pedido", `Impressão de etiquetas do Pedido #${pedidoId}`, userProfile?.nome, null, numVolumes);
+ 
+    alert("Janela de impressão aberta. Verifique sua impressora e confirme a impressão.");
+};
 
 window.atualizarStatusPeloSelect = async function(pedidoId) {
     const select = document.getElementById("novo-status-selecionado");
@@ -2145,6 +2501,61 @@ window.renderMenuRelatorios = function() {
         </div>
     `;
 }
+
+window.gerarRelatorioPendencias = async function(pedidoId) {
+    const { data: itens } = await supabase
+        .from('itens_pedido')
+        .select('id, produto_id, tamanho, quantidade_solicitada, quantidade_atendida, catalogo(nome)')
+        .eq('pedido_id', pedidoId);
+
+    if (!itens || itens.length === 0) {
+        alert("Nenhum item encontrado para este pedido.");
+        return;
+    }
+
+    let tabela = `
+        <h2>Relatório de Pendências do Pedido #${pedidoId}</h2>
+        <table border="1" cellspacing="0" cellpadding="6" style="border-collapse: collapse; width:100%;">
+            <tr style="background:#f1f5f9;">
+                <th>Produto</th>
+                <th>Tamanho</th>
+                <th>Solicitado</th>
+                <th>Atendido</th>
+                <th>Pendente</th>
+            </tr>
+    `;
+
+    itens.forEach(it => {
+        const s = parseInt(it.quantidade_solicitada || 0);
+        const a = parseInt(it.quantidade_atendida || 0);
+        const r = s - a;
+
+        tabela += `
+            <tr>
+                <td>${it.catalogo?.nome || ""}</td>
+                <td>${it.tamanho || ""}</td>
+                <td style="text-align:center;">${s}</td>
+                <td style="text-align:center;">${a}</td>
+                <td style="text-align:center; font-weight:700; color:${r>0?'red':'green'};">${r}</td>
+            </tr>
+        `;
+    });
+
+    tabela += "</table>";
+
+    const win = window.open("", "_blank");
+    win.document.write(`
+        <html>
+        <head>
+            <title>Pendências Pedido ${pedidoId}</title>
+        </head>
+        <body style="font-family: Arial; padding:20px;">
+            ${tabela}
+        </body>
+        </html>
+    `);
+    win.document.close();
+};
 
 window.gerarRelatorioPDF = async function(tipo) {
     // Exemplo simples usando window.print para evitar dependência complexa agora

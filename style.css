@@ -1,4 +1,4 @@
-/* =========================================
+﻿/* =========================================
    1. VARIÁVEIS E RESET GLOBAL
    ========================================= */
 :root {
@@ -635,6 +635,16 @@ td button {
 }
 .uniformes-table th button:nth-child(2):hover {
     background: #f9d7d3;
+}
+
+.badge-volume {
+    background: #2563eb;
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-left: 6px;
 }
 
 }
