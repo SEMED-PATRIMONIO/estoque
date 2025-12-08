@@ -2096,6 +2096,7 @@ window.gerarPDFPedido = async function(pedidoId, destino, itens) {
 }
 
 // 4. Gerenciar Pedido (Atualizar Status com Bloqueios)
+// ATUALIZADO: Troca de posição dos botões 'Enviar Lote' e 'Informar Volumes'
 window.openModalGerenciarPedido = async function(pedidoId) {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
@@ -2112,15 +2113,13 @@ window.openModalGerenciarPedido = async function(pedidoId) {
             .single();
         if (errPed) throw errPed;
 
-        // 2) Busca itens do pedido incluindo quantidade_atendida (se existir)
-        // Tentamos selecionar quantidade_atendida; se não existir, a query retorna sem ela
+        // 2) Busca itens do pedido
         const { data: itensRaw, error: errItens } = await supabase
             .from('itens_pedido')
             .select('id, produto_id, quantidade_solicitada, quantidade_atendida, tamanho, catalogo(id, nome, tipo)')
             .eq('pedido_id', pedidoId);
         if (errItens) throw errItens;
 
-        // Monta HTML dos itens com checkbox e input de quantidade a enviar
         let htmlItens = `<table class="table-geral" style="width:100%; margin-bottom:12px;">
             <thead>
                 <tr style="background:#f1f5f9;">
@@ -2145,7 +2144,7 @@ window.openModalGerenciarPedido = async function(pedidoId) {
                 const solicitado = parseInt(it.quantidade_solicitada) || 0;
                 const atendido = parseInt(it.quantidade_atendida) || 0;
                 const restante = Math.max(0, solicitado - atendido);
-                // linha com checkbox + quantidade
+                
                 htmlItens += `<tr data-item-id="${it.id}" data-prod-id="${it.produto_id}" data-tipo="${tipo}" data-tamanho="${it.tamanho || ''}">
                     <td style="text-align:center"><input type="checkbox" class="env-checkbox" data-item="${it.id}"></td>
                     <td>${nomeProd}</td>
@@ -2162,7 +2161,7 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         }
         htmlItens += `</tbody></table>`;
 
-        // Área volumes (oculta até ser preenchida)
+        // Área volumes
         const areaVolumes = `
             <div id="area-volumes" style="display:none; margin-top:10px;">
                 <label style="font-weight:700;">Quantidade de volumes:</label>
@@ -2171,11 +2170,11 @@ window.openModalGerenciarPedido = async function(pedidoId) {
             </div>
         `;
 
-        // Ações: Enviar lote parcial / Atualizar status / Reimprimir PDF
+        // ATUALIZAÇÃO AQUI: Botões trocados de lugar conforme solicitado
         const areaAcoes = `
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
-                <button class="btn-confirmar" onclick="window.processarEnvioParcial(${pedidoId})"><i class="fas fa-truck"></i> Enviar Lote Selecionado</button>
                 <button onclick="document.getElementById('area-volumes').style.display='block';" class="btn-confirmar" style="background:#64748b;"><i class="fas fa-boxes"></i> Informar Volumes / Imprimir</button>
+                <button class="btn-confirmar" onclick="window.processarEnvioParcial(${pedidoId})"><i class="fas fa-truck"></i> Enviar Lote Selecionado</button>
                 <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome || ''}')" style="background:#64748b; color:white; border:none; padding:8px 12px; border-radius:6px;">
                     <i class="fas fa-print"></i> Re-imprimir Pedido (PDF)
                 </button>
@@ -2186,7 +2185,6 @@ window.openModalGerenciarPedido = async function(pedidoId) {
             </div>
         `;
 
-        // Monta modal completo
         content.innerHTML = `
             <h3><i class="fas fa-edit"></i> Gerenciar Pedido #${pedido.id}</h3>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:12px;">
@@ -2209,7 +2207,7 @@ window.openModalGerenciarPedido = async function(pedidoId) {
     }
 };
 
-// === Adicionar window.processarEnvioParcial ===
+// ATUALIZADO: Redireciona para 'Unif. Roupas' após sucesso
 window.processarEnvioParcial = async function(pedidoId) {
     try {
         const checkboxes = Array.from(document.querySelectorAll('.env-checkbox')).filter(cb => cb.checked);
@@ -2218,14 +2216,13 @@ window.processarEnvioParcial = async function(pedidoId) {
         const numVolumesInput = document.getElementById('num-volumes');
         const numVolumes = numVolumesInput ? parseInt(numVolumesInput.value) || 0 : 0;
 
-        // Busca dados do pedido (incluindo ID do destino)
         const { data: pedInfo } = await supabase.from('pedidos')
             .select('unidades(nome), unidade_destino_id')
             .eq('id', pedidoId)
             .single();
             
         const destinoNome = pedInfo?.unidades?.nome || 'Desconhecido';
-        const destinoId = pedInfo?.unidade_destino_id; // Importante para o perfil Escola
+        const destinoId = pedInfo?.unidade_destino_id;
 
         const envios = [];
         for (const cb of checkboxes) {
@@ -2249,14 +2246,12 @@ window.processarEnvioParcial = async function(pedidoId) {
 
         if (envios.length === 0) return alert("Nenhum item válido.");
 
-        // Atualiza DB
+        // Atualiza DB (Itens e Estoque)
         for (const ev of envios) {
-            // Atualiza Item Pedido
             const { data: ip } = await supabase.from('itens_pedido').select('quantidade_atendida').eq('id', ev.itemId).single();
             const atual = ip ? parseInt(ip.quantidade_atendida || 0) : 0;
             await supabase.from('itens_pedido').update({ quantidade_atendida: atual + ev.qtdEnviar }).eq('id', ev.itemId);
 
-            // Baixa Estoque
             const { data: prod } = await supabase.from('catalogo').select('tipo').eq('id', ev.produto_id).single();
             const tipoProd = String(prod?.tipo).toUpperCase();
 
@@ -2275,7 +2270,7 @@ window.processarEnvioParcial = async function(pedidoId) {
                 pedido_id: pedidoId,
                 responsavel_liberacao: userProfile?.nome || 'Sistema',
                 destino_nome: destinoNome,
-                unidade_destino_id: destinoId, // Novo campo
+                unidade_destino_id: destinoId,
                 quantidade_volumes: numVolumes,
                 status: 'LIBERADO PARA COLETA',
                 observacao: `Parcial/Total com ${envios.length} itens.`
@@ -2284,9 +2279,20 @@ window.processarEnvioParcial = async function(pedidoId) {
             await registrarHistorico(null, envios.reduce((s,x)=>s+x.qtdEnviar,0), 'Envio Pedido', `Liberado Coleta. Vols: ${numVolumes}`, userProfile?.nome, destinoId);
             window.abrirVolumesUI(pedidoId, destinoNome);
         } else {
-            alert("Estoque baixado. Sem logística (0 volumes).");
+            alert("Estoque baixado. Lançamento concluído.");
             window.closeModal();
-            window.renderTab('pedidos');
+            
+            // ATUALIZAÇÃO AQUI: Força o retorno para a aba 'Uniformes Roupas'
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            const btnUnif = document.querySelector('.tab-button[data-tab="uniformes_roupas"]');
+            if (btnUnif) {
+                btnUnif.classList.add('active');
+                activeTab = 'uniformes_roupas';
+                window.renderTab('uniformes_roupas');
+            } else {
+                 // Fallback se o usuário não tiver acesso (ex: logistica), vai para a atual
+                window.renderTab(activeTab);
+            }
         }
 
         // Atualiza status pedido pai
@@ -2300,6 +2306,7 @@ window.processarEnvioParcial = async function(pedidoId) {
         console.error(err); alert("Erro: " + err.message);
     }
 };
+
 // === Adicionar UI de volumes e função de impressão ===
 window.abrirVolumesUI = function(pedidoId, destinoNome) {
     const wrapper = document.getElementById('volumes-ui-area');
@@ -2685,152 +2692,239 @@ window.renderTabLogistica = async function() {
 
 // 2. Ação: Iniciar Transporte (Muda status para SAIU PARA ENTREGA)
 window.iniciarTransporte = async function(logId) {
-    if(!confirm("Iniciar transporte desta remessa?")) return;
-    
-    // Atualiza status (não cria linha nova)
-    const { error } = await supabase.from('logistica_entregas').update({
-        status: 'SAIU PARA ENTREGA',
-        data_inicio_transporte: new Date().toISOString(),
-        responsavel_transporte: userProfile?.nome
-    }).eq('id', logId);
+    if(!confirm("Confirmar o início do transporte? A remessa sairá da lista de pendências.")) return;
 
-    if(error) return alert("Erro: " + error.message);
-    
-    alert("Situação atualizada para 'SAIU PARA ENTREGA'.");
-    // Apenas atualiza visualmente removendo da lista
-    window.renderTabLogistica(); 
+    try {
+        // Padronizando status para "EM TRANSPORTE" para casar com o filtro da escola
+        const { error } = await supabase
+            .from('logistica_entregas')
+            .update({
+                status: 'EM TRANSPORTE',
+                data_inicio_transporte: new Date().toISOString(),
+                responsavel_transporte: userProfile?.nome || 'Logística'
+            })
+            .eq('id', logId);
+
+        if (error) throw error;
+
+        alert("Transporte iniciado! O status agora é 'EM TRANSPORTE'.");
+        window.renderTabLogistica(); // Atualiza a tela de logística
+
+    } catch (e) {
+        alert("Erro ao atualizar: " + e.message);
+        console.error(e);
+    }
 }
 
 // 3. Renderiza Aba Histórico Log (Comportamento condicional: Escola vs Outros)
+// ATUALIZADO: Filtro para Escola (EM TRANSPORTE + Unidade) e Botões de Ação
 window.renderTabHistoricoLog = async function() {
     const tab = document.getElementById("tab-content");
-    tab.innerHTML = '<div style="text-align:center;"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>';
+    tab.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando Histórico...</div>';
 
     let query = supabase.from('logistica_entregas').select('*');
 
-    // FILTRO PERFIL ESCOLA
+    // --- CORREÇÃO DE SEGURANÇA E VISIBILIDADE ---
     if (userProfile.nivel === 'escola') {
-        if (!userProfile.unidadeId) return tab.innerHTML = "<p>Usuário sem unidade vinculada.</p>";
-        // Somente destino da escola E status 'SAIU PARA ENTREGA'
+        // Validação: Usuário deve ter unidade vinculada
+        if (!userProfile.unidadeId) {
+            tab.innerHTML = `<div style="padding:20px; color:red; text-align:center;">
+                <i class="fas fa-exclamation-triangle"></i> Erro: Seu usuário não está vinculado a nenhuma unidade escolar. Contate o suporte.
+            </div>`;
+            return;
+        }
+
+        // Filtra APENAS pedidos para esta escola E que estejam a caminho
         query = query
             .eq('unidade_destino_id', userProfile.unidadeId)
-            .eq('status', 'SAIU PARA ENTREGA');
+            .eq('status', 'EM TRANSPORTE'); // Garante que só vê o que saiu da logística
     } else {
-        // Logística/Admin vê tudo que NÃO é 'LIBERADO PARA COLETA' (pois esses estão na aba Logística)
+        // Perfil Logística/Admin vê tudo que já saiu da separação
         query = query.neq('status', 'LIBERADO PARA COLETA').limit(50);
     }
     
-    const { data: logs } = await query.order('data_inicio_transporte', { ascending: false });
+    const { data: logs, error } = await query.order('data_inicio_transporte', { ascending: false });
+
+    if (error) {
+        tab.innerHTML = `<p style="color:red; text-align:center;">Erro ao carregar dados: ${error.message}</p>`;
+        return;
+    }
 
     let html = `<div class="uniformes-header"><h2><i class="fas fa-clipboard-list"></i> Histórico / Recebimento</h2></div>`;
     
-    // Se for escola, adicionamos instruções
+    // Feedback visual se não houver registros
+    if (!logs || logs.length === 0) {
+        html += `<div style="text-align:center; padding:30px; color:#64748b;">
+                    <i class="fas fa-box-open" style="font-size:2rem; margin-bottom:10px;"></i><br>
+                    ${userProfile.nivel === 'escola' ? 'Nenhuma entrega a caminho no momento.' : 'Nenhum histórico recente.'}
+                 </div>`;
+        tab.innerHTML = html;
+        return;
+    }
+
+    // Instruções para Escola
     if (userProfile.nivel === 'escola') {
-        html += `<p style="padding:0 10px; color:#666;">Selecione uma remessa abaixo para Confirmar ou Recusar.</p>`;
+        html += `<div style="background:#eff6ff; border-left:4px solid #2563eb; padding:12px; margin-bottom:20px; border-radius:4px; color:#1e40af;">
+            <i class="fas fa-info-circle"></i> <strong>Ação Necessária:</strong> Clique em uma linha da tabela abaixo para liberar os botões de <b>Confirmar Recebimento</b> ou <b>Recusar</b>.
+        </div>`;
     }
 
     html += `<table class="data-table" id="table-hist-log">
-        <thead><tr><th>Data Saída</th><th>Pedido</th><th>Destino</th><th>Vols</th><th>Transportador</th><th>Status</th></tr></thead>
+        <thead>
+            <tr>
+                <th>Data Saída</th>
+                <th>Pedido</th>
+                <th>Destino</th>
+                <th>Volumes</th>
+                <th>Transportador</th>
+                <th>Status</th>
+            </tr>
+        </thead>
         <tbody>`;
 
-    if (logs && logs.length > 0) {
-        logs.forEach(r => {
-            const dataSaida = r.data_inicio_transporte ? new Date(r.data_inicio_transporte).toLocaleString() : '-';
-            let stClass = '';
-            if(r.status === 'SAIU PARA ENTREGA') stClass = 'status-log-transporte';
-            else if(r.status === 'RECEBIMENTO CONFIRMADO') stClass = 'status-log-entregue';
-            else if(r.status === 'RECUSADO') stClass = 'status-tag conservacao-danificado';
+    logs.forEach(r => {
+        const dataSaida = r.data_inicio_transporte ? new Date(r.data_inicio_transporte).toLocaleString() : '-';
+        
+        // Definição de Cores/Badges
+        let stClass = 'status-tag ';
+        if(r.status === 'EM TRANSPORTE') stClass += 'conservacao-bom'; // Azul
+        else if(r.status === 'RECEBIMENTO CONFIRMADO') stClass += 'conservacao-novo'; // Verde
+        else if(r.status === 'RECUSADO') stClass += 'conservacao-danificado'; // Vermelho
+        else stClass += 'conservacao-regular';
 
-            html += `<tr data-id="${r.id}" class="row-logistica">
-                <td>${dataSaida}</td>
-                <td>#${r.pedido_id}</td>
-                <td>${r.destino_nome}</td>
-                <td style="text-align:center">${r.quantidade_volumes}</td>
-                <td>${r.responsavel_transporte || '-'}</td>
-                <td><span class="${stClass}">${r.status}</span></td>
-            </tr>`;
-        });
-    } else {
-        html += `<tr><td colspan="6" style="text-align:center;">Nenhum registro encontrado.</td></tr>`;
-    }
+        html += `<tr data-id="${r.id}" class="row-logistica">
+            <td>${dataSaida}</td>
+            <td>#${r.pedido_id}</td>
+            <td>${r.destino_nome}</td>
+            <td style="text-align:center; font-weight:bold;">${r.quantidade_volumes}</td>
+            <td>${r.responsavel_transporte || '-'}</td>
+            <td><span class="${stClass}">${r.status}</span></td>
+        </tr>`;
+    });
+
     html += `</tbody></table>`;
 
-    // Botões para Escola (inicialmente ocultos ou desabilitados até selecionar)
+    // --- ÁREA DOS BOTÕES (Aparece apenas para Escola) ---
     if (userProfile.nivel === 'escola') {
         html += `
-            <div id="school-actions" style="margin-top:20px; display:none; border-top:1px solid #ddd; padding-top:15px; text-align:right;">
-                <button class="btn-danger" onclick="window.acaoEscola('recusar')">RECUSAR ENTREGA</button>
-                <button class="btn-confirmar" onclick="window.acaoEscola('confirmar')">CONFIRMAR RECEBIMENTO</button>
+            <div id="school-actions" style="margin-top:20px; display:none; border-top:1px solid #e2e8f0; padding-top:20px; text-align:right; animation: fadeIn 0.3s;">
+                <span style="float:left; font-weight:bold; color:#64748b; padding-top:10px;">Item selecionado. Escolha uma ação:</span>
+                
+                <button class="btn-danger" onclick="window.acaoEscola('recusar')" style="margin-right:10px;">
+                    <i class="fas fa-times-circle"></i> RECUSAR ENTREGA
+                </button>
+                
+                <button class="btn-confirmar" onclick="window.acaoEscola('confirmar')" style="background-color:#10b981;">
+                    <i class="fas fa-check-circle"></i> CONFIRMAR RECEBIMENTO
+                </button>
             </div>
         `;
     }
 
     tab.innerHTML = html;
 
-    // Evento de Seleção de Linha
+    // Adiciona evento de clique nas linhas para mostrar os botões
     if (userProfile.nivel === 'escola') {
         const trs = document.querySelectorAll('.row-logistica');
         trs.forEach(tr => {
             tr.style.cursor = 'pointer';
+            tr.title = "Clique para selecionar";
             tr.addEventListener('click', () => {
-                trs.forEach(t => t.classList.remove('selected-row'));
+                // Remove seleção anterior
+                trs.forEach(t => {
+                    t.classList.remove('selected-row');
+                    t.style.backgroundColor = ''; // Limpa cor inline se houver
+                });
+                
+                // Adiciona nova seleção
                 tr.classList.add('selected-row');
-                selectedRowId = tr.dataset.id; // Usa variável global existente
-                document.getElementById('school-actions').style.display = 'block';
+                selectedRowId = tr.dataset.id;
+                
+                // Mostra a div de ações
+                const actionsDiv = document.getElementById('school-actions');
+                if (actionsDiv) {
+                    actionsDiv.style.display = 'block';
+                    // Scroll suave até os botões se necessário
+                    actionsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             });
         });
     }
 }
 
-// 4. Ações da Escola (Confirmar/Recusar)
+// ATUALIZADO: Lógica de Confirmação e Recusa com estorno
 window.acaoEscola = async function(acao) {
-    if (!selectedRowId) return alert("Selecione uma remessa.");
+    if (!selectedRowId) return alert("Selecione uma remessa na tabela.");
+
+    // Feedback visual no botão
+    const btnConfirmar = document.querySelector('#school-actions .btn-confirmar');
+    const btnRecusar = document.querySelector('#school-actions .btn-danger');
 
     if (acao === 'confirmar') {
-        if(!confirm("Confirma o recebimento físico dos volumes?")) return;
+        if(!confirm("Confirma que recebeu fisicamente todos os volumes?")) return;
         
-        await supabase.from('logistica_entregas')
-            .update({ status: 'RECEBIMENTO CONFIRMADO' })
-            .eq('id', selectedRowId);
+        if(btnConfirmar) { btnConfirmar.innerText = "Processando..."; btnConfirmar.disabled = true; }
+
+        try {
+            const { error } = await supabase.from('logistica_entregas')
+                .update({ status: 'RECEBIMENTO CONFIRMADO' })
+                .eq('id', selectedRowId);
+
+            if (error) throw error;
             
-        alert("Recebimento confirmado!");
-        window.renderTabHistoricoLog();
+            // Log no histórico global
+            const { data: logInfo } = await supabase.from('logistica_entregas').select('pedido_id').eq('id', selectedRowId).single();
+            await registrarHistorico(null, 0, 'RECEBIMENTO_ESCOLA', `Recebimento confirmado. Pedido #${logInfo?.pedido_id}`, userProfile?.nome, userProfile?.unidadeId);
+
+            alert("Recebimento confirmado com sucesso!");
+            window.renderTabHistoricoLog();
+        } catch(e) {
+            alert("Erro: " + e.message);
+            if(btnConfirmar) { btnConfirmar.innerText = "CONFIRMAR RECEBIMENTO"; btnConfirmar.disabled = false; }
+        }
     } 
     else if (acao === 'recusar') {
         const just = prompt("Motivo da recusa (Obrigatório):");
-        if (!just) return alert("Justificativa obrigatória.");
+        if (!just) return;
 
-        // 1. Atualiza status na logística
-        await supabase.from('logistica_entregas')
-            .update({ status: 'RECUSADO', justificativa_recusa: just })
-            .eq('id', selectedRowId);
+        if(btnRecusar) { btnRecusar.innerText = "Processando..."; btnRecusar.disabled = true; }
 
-        // 2. Devolve ao estoque (Processo complexo)
-        // Busca o ID do pedido vinculado a essa entrega
-        const { data: logData } = await supabase.from('logistica_entregas').select('pedido_id').eq('id', selectedRowId).single();
-        if(logData) {
-            await devolverEstoquePorRecusa(logData.pedido_id);
+        try {
+            // 1. Marca como recusado
+            await supabase.from('logistica_entregas')
+                .update({ status: 'RECUSADO', justificativa_recusa: just })
+                .eq('id', selectedRowId);
+
+            // 2. Devolve estoque (Função auxiliar deve estar implementada conforme passo anterior)
+            const { data: logData } = await supabase.from('logistica_entregas').select('pedido_id').eq('id', selectedRowId).single();
+            if(logData && window.devolverEstoquePorRecusa) {
+                await window.devolverEstoquePorRecusa(logData.pedido_id, just);
+            }
+
+            alert("Entrega recusada e itens estornados.");
+            window.renderTabHistoricoLog();
+        } catch(e) {
+            alert("Erro: " + e.message);
+            if(btnRecusar) { btnRecusar.innerText = "RECUSAR ENTREGA"; btnRecusar.disabled = false; }
         }
-
-        alert("Entrega recusada e itens estornados ao estoque.");
-        window.renderTabHistoricoLog();
     }
 }
 
-async function devolverEstoquePorRecusa(pedidoId) {
-    // Busca itens do pedido (simplificação: devolve TUDO do pedido, já que a remessa é por pedido)
-    // Para maior precisão, precisaríamos rastrear itens por remessa, mas o modelo atual vincula 1 pedido -> N remessas sem detalhar itens por remessa na tabela logística.
-    // Assumiremos devolução dos itens que foram "atendidos" neste pedido.
-    
+// Função auxiliar atualizada para garantir o registro no histórico
+async function devolverEstoquePorRecusa(pedidoId, justificativa) {
+    // Busca itens do pedido
     const { data: itens } = await supabase.from('itens_pedido').select('*').eq('pedido_id', pedidoId);
     
+    if (!itens) return;
+
     for (const item of itens) {
+        // Devolve apenas o que foi marcado como 'atendido' (enviado)
         if (item.quantidade_atendida > 0) {
-            // Busca tipo produto
-            const { data: prod } = await supabase.from('catalogo').select('tipo').eq('id', item.produto_id).single();
+            // Busca tipo produto para saber onde devolver
+            const { data: prod } = await supabase.from('catalogo').select('tipo, nome').eq('id', item.produto_id).single();
             const tipo = String(prod.tipo).toUpperCase();
             
-            // Incrementa estoque
+            // Incrementa estoque (Estorno)
             if (tipo === 'CONSUMO') {
                 const { data: est } = await supabase.from('estoque_consumo').select('*').eq('produto_id', item.produto_id).single();
                 if(est) await supabase.from('estoque_consumo').update({ quantidade_atual: est.quantidade_atual + item.quantidade_atendida }).eq('id', est.id);
@@ -2839,10 +2933,24 @@ async function devolverEstoquePorRecusa(pedidoId) {
                 if(est) await supabase.from('estoque_tamanhos').update({ quantidade: est.quantidade + item.quantidade_atendida }).eq('id', est.id);
             }
             
-            // Histórico Global de Retorno
-            await registrarHistorico(item.produto_id, item.quantidade_atendida, 'DEVOLUCAO_RECUSA', `Recusa Escola. Pedido #${pedidoId}`, userProfile?.nome);
+            // Registra no Histórico Global (Aba Histórico)
+            await registrarHistorico(
+                item.produto_id, 
+                item.quantidade_atendida, 
+                'ENTRADA_POR_RECUSA', // Tipo claro de movimento
+                `Recusa de Entrega (Ped #${pedidoId}). Justificativa: ${justificativa}`, 
+                userProfile?.nome, 
+                null // Volta para o estoque central/sem unidade específica de destino neste momento
+            );
+
+            // Zera a quantidade atendida no pedido para permitir reenvio futuro (opcional, mas recomendado)
+            await supabase.from('itens_pedido').update({ quantidade_atendida: 0 }).eq('id', item.id);
         }
     }
+    
+    // Opcional: Voltar status do pedido para Pendente ou manter Parcial?
+    // Nesse caso, como foi recusado, faz sentido voltar para Pendente para ser tratado novamente pela logística
+    await supabase.from('pedidos').update({ status: 'PENDENTE' }).eq('id', pedidoId);
 }
 
 // 5. Módulo Pedido Prévio (Complexo)
@@ -3243,84 +3351,6 @@ window.verificarAlertasAdmin = async function() {
             btn.appendChild(badge);
         }
     }
-}
-
-window.iniciarTransporte = async function(logId) {
-    if(!confirm("Confirmar o início do transporte? A remessa sairá desta lista.")) return;
-
-    try {
-        const { error } = await supabase
-            .from('logistica_entregas')
-            .update({
-                status: 'EM TRANSPORTE',
-                data_inicio_transporte: new Date().toISOString(),
-                responsavel_transporte: userProfile?.nome || 'Logística'
-            })
-            .eq('id', logId);
-
-        if (error) throw error;
-
-        alert("Transporte iniciado com sucesso!");
-        window.renderTabLogistica(); // Recarrega a lista
-
-    } catch (e) {
-        alert("Erro ao atualizar: " + e.message);
-    }
-}
-
-window.renderTabHistoricoLog = async function() {
-    const tab = document.getElementById("tab-content");
-    tab.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando Histórico...</div>';
-
-    // Busca itens que NÃO estão liberados para coleta (ou seja, já saíram ou foram entregues)
-    // Se quiser ver TUDO, remova o filtro .neq
-    const { data: logs, error } = await supabase
-        .from('logistica_entregas')
-        .select('*')
-        .neq('status', 'LIBERADO PARA COLETA') 
-        .order('data_inicio_transporte', { ascending: false })
-        .limit(50);
-
-    let html = `
-        <div class="uniformes-header">
-            <h2><i class="fas fa-clipboard-list"></i> Histórico de Transportes</h2>
-        </div>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Data Saída</th>
-                    <th>Pedido</th>
-                    <th>Destino</th>
-                    <th>Volumes</th>
-                    <th>Transportador</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-
-    if (logs && logs.length > 0) {
-        logs.forEach(r => {
-            const dataSaida = r.data_inicio_transporte ? new Date(r.data_inicio_transporte).toLocaleString() : '-';
-            let statusClass = r.status === 'EM TRANSPORTE' ? 'status-log-transporte' : 'status-log-entregue';
-            
-            html += `
-                <tr>
-                    <td>${dataSaida}</td>
-                    <td>#${r.pedido_id}</td>
-                    <td>${r.destino_nome}</td>
-                    <td style="text-align:center">${r.quantidade_volumes}</td>
-                    <td>${r.responsavel_transporte || '-'}</td>
-                    <td><span class="${statusClass}">${r.status}</span></td>
-                </tr>
-            `;
-        });
-    } else {
-        html += `<tr><td colspan="6" style="text-align:center">Nenhum histórico recente.</td></tr>`;
-    }
-
-    html += `</tbody></table>`;
-    tab.innerHTML = html;
 }
 
 window.renderTabPedidoPrevio = function() {
