@@ -27,7 +27,10 @@
 <div id="app-container" class="app-container hidden">
 
     <header class="app-header">
+        <img src="educ2.png" alt="Logo SEMED" class="header-logo">
+
         <h1>Sistema de Controle de Estoque</h1>
+
         <div class="header-actions">
             <button id="btn-config" class="config-button">
                 <i class="fas fa-cog"></i> Configurações
@@ -47,6 +50,10 @@
         <button class="tab-button" data-tab="historico"><i class="fas fa-history"></i> Histórico</button>
         <button class="tab-button" data-tab="relatorios"><i class="fas fa-chart-bar"></i> Relatórios</button>
         <button class="tab-button" data-tab="calculadora"><i class="fas fa-calculator"></i> Calculadora</button>
+
+        <button class="tab-button" data-tab="logistica"><i class="fas fa-truck-loading"></i> Logística</button>
+        <button class="tab-button" data-tab="historico_log"><i class="fas fa-clipboard-list"></i> Histórico Log</button>
+        <button class="tab-button" data-tab="pedido_previo"><i class="fas fa-calendar-alt"></i> Pedido Prévio</button>
     </nav>
 
     <div id="tab-content" class="tab-content">
@@ -71,6 +78,7 @@
                 <button class="config-submenu-button" onclick="window.navegarConfig('catalogo')"><i class="fas fa-tags"></i> Catálogo</button>
                 <button class="config-submenu-button" onclick="window.navegarConfig('categorias')"><i class="fas fa-layer-group"></i> Categorias</button>
                 <button class="config-submenu-button" onclick="window.navegarConfig('locais')"><i class="fas fa-map-marker-alt"></i> Locais</button>
+                <button class="config-submenu-button" onclick="window.navegarConfig('setores')"><i class="fas fa-door-open"></i> Depto/Setores</button>
                 <button class="config-submenu-button" onclick="window.navegarConfig('usuarios')"><i class="fas fa-users"></i> Usuários</button>
                 <button class="config-submenu-button" onclick="window.navegarConfig('tamanhos_roupas')"><i class="fas fa-tshirt"></i> Tam. Roupas</button>
                 <button class="config-submenu-button" onclick="window.navegarConfig('tamanhos_calcados')"><i class="fas fa-shoe-prints"></i> Tam. Calçados</button>
