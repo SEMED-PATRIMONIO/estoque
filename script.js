@@ -2717,7 +2717,7 @@ window.iniciarTransporte = async function(logId) {
 }
 
 // 3. Renderiza Aba Histórico Log (Comportamento condicional: Escola vs Outros)
-// ATUALIZADO: Filtro para Escola (EM TRANSPORTE + Unidade) e Botões de Ação
+// ATUALIZADO: Botão de Recusar Entrega foi Ocultado/Desabilitado
 window.renderTabHistoricoLog = async function() {
     const tab = document.getElementById("tab-content");
     tab.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando Histórico...</div>';
@@ -2765,7 +2765,7 @@ window.renderTabHistoricoLog = async function() {
     // Instruções para Escola
     if (userProfile.nivel === 'escola') {
         html += `<div style="background:#eff6ff; border-left:4px solid #2563eb; padding:12px; margin-bottom:20px; border-radius:4px; color:#1e40af;">
-            <i class="fas fa-info-circle"></i> <strong>Ação Necessária:</strong> Clique em uma linha da tabela abaixo para liberar os botões de <b>Confirmar Recebimento</b> ou <b>Recusar</b>.
+            <i class="fas fa-info-circle"></i> <strong>Ação Necessária:</strong> Clique em uma linha da tabela abaixo para liberar o botão de <b>Confirmar Recebimento</b>.
         </div>`;
     }
 
@@ -2809,10 +2809,6 @@ window.renderTabHistoricoLog = async function() {
         html += `
             <div id="school-actions" style="margin-top:20px; display:none; border-top:1px solid #e2e8f0; padding-top:20px; text-align:right; animation: fadeIn 0.3s;">
                 <span style="float:left; font-weight:bold; color:#64748b; padding-top:10px;">Item selecionado. Escolha uma ação:</span>
-                
-                <button class="btn-danger" onclick="window.acaoEscola('recusar')" style="margin-right:10px;">
-                    <i class="fas fa-times-circle"></i> RECUSAR ENTREGA
-                </button>
                 
                 <button class="btn-confirmar" onclick="window.acaoEscola('confirmar')" style="background-color:#10b981;">
                     <i class="fas fa-check-circle"></i> CONFIRMAR RECEBIMENTO
@@ -2911,45 +2907,104 @@ window.acaoEscola = async function(acao) {
 }
 
 // Função auxiliar atualizada para garantir o registro no histórico
-async function devolverEstoquePorRecusa(pedidoId, justificativa) {
+// --- FUNÇÃO CORRIGIDA: DEVOLUÇÃO DE ESTOQUE POR RECUSA ---
+window.devolverEstoquePorRecusa = async function(pedidoId, justificativa) {
+    console.log(`Iniciando estorno para o Pedido #${pedidoId}`);
+
     // Busca itens do pedido
-    const { data: itens } = await supabase.from('itens_pedido').select('*').eq('pedido_id', pedidoId);
+    const { data: itens, error } = await supabase
+        .from('itens_pedido')
+        .select('*')
+        .eq('pedido_id', pedidoId);
     
-    if (!itens) return;
+    if (error || !itens) {
+        console.error("Erro ao buscar itens para estorno:", error);
+        return;
+    }
 
     for (const item of itens) {
-        // Devolve apenas o que foi marcado como 'atendido' (enviado)
-        if (item.quantidade_atendida > 0) {
-            // Busca tipo produto para saber onde devolver
-            const { data: prod } = await supabase.from('catalogo').select('tipo, nome').eq('id', item.produto_id).single();
-            const tipo = String(prod.tipo).toUpperCase();
-            
-            // Incrementa estoque (Estorno)
-            if (tipo === 'CONSUMO') {
-                const { data: est } = await supabase.from('estoque_consumo').select('*').eq('produto_id', item.produto_id).single();
-                if(est) await supabase.from('estoque_consumo').update({ quantidade_atual: est.quantidade_atual + item.quantidade_atendida }).eq('id', est.id);
-            } else {
-                const { data: est } = await supabase.from('estoque_tamanhos').select('*').eq('produto_id', item.produto_id).eq('tamanho', item.tamanho).single();
-                if(est) await supabase.from('estoque_tamanhos').update({ quantidade: est.quantidade + item.quantidade_atendida }).eq('id', est.id);
-            }
-            
-            // Registra no Histórico Global (Aba Histórico)
-            await registrarHistorico(
-                item.produto_id, 
-                item.quantidade_atendida, 
-                'ENTRADA_POR_RECUSA', // Tipo claro de movimento
-                `Recusa de Entrega (Ped #${pedidoId}). Justificativa: ${justificativa}`, 
-                userProfile?.nome, 
-                null // Volta para o estoque central/sem unidade específica de destino neste momento
-            );
+        // Devolve apenas o que foi marcado como 'atendido' (enviado) e que é maior que zero
+        const qtdDevolver = parseInt(item.quantidade_atendida) || 0;
 
-            // Zera a quantidade atendida no pedido para permitir reenvio futuro (opcional, mas recomendado)
-            await supabase.from('itens_pedido').update({ quantidade_atendida: 0 }).eq('id', item.id);
+        if (qtdDevolver > 0) {
+            // Busca tipo produto para saber onde devolver
+            const { data: prod } = await supabase
+                .from('catalogo')
+                .select('tipo, nome')
+                .eq('id', item.produto_id)
+                .single();
+
+            if (!prod) continue;
+
+            // Padroniza o tipo para garantir a comparação correta
+            const tipo = String(prod.tipo).toUpperCase().trim();
+            
+            console.log(`Estornando: ${prod.nome} | Tipo: ${tipo} | Qtd: ${qtdDevolver}`);
+
+            try {
+                // LÓGICA 1: MATERIAL DE CONSUMO
+                if (tipo === 'CONSUMO') {
+                    const { data: est } = await supabase
+                        .from('estoque_consumo')
+                        .select('*')
+                        .eq('produto_id', item.produto_id)
+                        .single();
+                    
+                    if (est) {
+                        await supabase
+                            .from('estoque_consumo')
+                            .update({ quantidade_atual: est.quantidade_atual + qtdDevolver })
+                            .eq('id', est.id);
+                    } else {
+                        // Se não existir registro de estoque (raro), cria um
+                        await supabase
+                            .from('estoque_consumo')
+                            .insert({ produto_id: item.produto_id, quantidade_atual: qtdDevolver });
+                    }
+                } 
+                // LÓGICA 2: UNIFORMES (Roupas ou Calçados)
+                else if (tipo.includes('UNIFORME')) {
+                    const { data: est } = await supabase
+                        .from('estoque_tamanhos')
+                        .select('*')
+                        .eq('produto_id', item.produto_id)
+                        .eq('tamanho', item.tamanho)
+                        .single();
+                    
+                    if (est) {
+                        await supabase
+                            .from('estoque_tamanhos')
+                            .update({ quantidade: est.quantidade + qtdDevolver })
+                            .eq('id', est.id);
+                    }
+                }
+                // LÓGICA 3: PATRIMÔNIO (Se houver no futuro)
+                // Patrimônio não tem "quantidade" em tabela, então apenas registramos o histórico
+                // pois os itens individuais precisariam ser re-identificados.
+
+                // Registra no Histórico Global
+                await registrarHistorico(
+                    item.produto_id, 
+                    qtdDevolver, 
+                    'ENTRADA_POR_RECUSA', 
+                    `Recusa de Entrega (Ped #${pedidoId}). Justificativa: ${justificativa}`, 
+                    userProfile?.nome, 
+                    null 
+                );
+
+                // Zera a quantidade atendida no pedido para permitir um novo envio futuro correto
+                await supabase
+                    .from('itens_pedido')
+                    .update({ quantidade_atendida: 0 })
+                    .eq('id', item.id);
+
+            } catch (err) {
+                console.error(`Erro ao estornar item ${item.produto_id}:`, err);
+            }
         }
     }
     
-    // Opcional: Voltar status do pedido para Pendente ou manter Parcial?
-    // Nesse caso, como foi recusado, faz sentido voltar para Pendente para ser tratado novamente pela logística
+    // Volta status do pedido para PENDENTE para que a logística possa processar novamente
     await supabase.from('pedidos').update({ status: 'PENDENTE' }).eq('id', pedidoId);
 }
 
