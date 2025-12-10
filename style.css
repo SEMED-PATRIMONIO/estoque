@@ -71,12 +71,10 @@ body {
     position: fixed;
     z-index: 2000;
     
-    /* MUDANÇA AQUI: Combina o gradiente original com o padrão de texto SEMED */
     background-color: #1e3a8a; /* Cor de fundo de segurança */
     background-image: 
-        /* Padrão SEMED (texto repetido, inclinado e transparente) */
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='90'%3E%3Ctext x='50%25' y='50%25' font-family='Arial, sans-serif' font-weight='bold' font-size='24' fill='rgba(255, 255, 255, 0.05)' text-anchor='middle' dominant-baseline='middle' transform='rotate(-15, 50, 30)'%3ESEMED%3C/text%3E%3C/svg%3E"),
-        /* Gradiente original */
+        /* CORREÇÃO: AUMENTADO O TAMANHO DA CÉLULA REPETIDORA PARA 500x250 */
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='250'%3E%3Ctext x='50%25' y='50%25' font-family='Arial, sans-serif' font-weight='bold' font-size='30' fill='rgba(255, 255, 255, 0.04)' text-anchor='middle' dominant-baseline='middle' transform='rotate(-15)'%3EPATRIMÔNIO SEMED%3C/text%3E%3C/svg%3E"),
         linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
 }
 
@@ -84,7 +82,7 @@ body {
     background: var(--bg-card);
     padding: 40px;
     border-radius: 20px;
-    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+    box-shadow: var(--shadow-lg);
     width: 100%;
     max-width: 400px;
     text-align: center;
@@ -116,8 +114,25 @@ body {
     width: 100%;
     margin-top: 20px;
     padding: 12px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
     font-size: 1.1rem;
+    cursor: pointer;
+    transition: var(--transition);
 }
+
+.login-box button:hover {
+    background: var(--primary-hover);
+}
+
+.error-message {
+    margin-top: 15px;
+    font-weight: 600;
+}
+
 
 /* =========================================
    3. LAYOUT PRINCIPAL E HEADER
@@ -147,7 +162,19 @@ body {
     margin: 0;
 }
 
-/* Botões do Header */
+.header-logo {
+    height: 45px;
+    width: auto;
+    margin-right: 15px;
+    vertical-align: middle;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+}
+
+/* Estilo para Botão de Configurações e Logout */
 .header-actions button {
     background: transparent;
     color: var(--text-muted);
@@ -163,24 +190,17 @@ body {
 .header-actions button:hover {
     background: var(--primary-light);
     color: var(--primary);
-    border-color: var(--primary);
-    transform: translateY(-2px);
 }
 
-.header-actions #logout-btn:hover {
-    background: #fef2f2;
-    color: var(--danger);
-    border-color: var(--danger);
-}
 
 /* =========================================
-   4. NAVEGAÇÃO (ABAS GAMIFICADAS)
+   4. NAVEGAÇÃO E ABAS
    ========================================= */
 .tabs {
     display: flex;
     gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 5px; /* Espaço para scrollbar se necessário */
+    overflow-x: auto; /* Permite scroll horizontal */
+    padding-bottom: 5px; /* Espaço para a sombra do scrollbar */
     margin-bottom: 20px;
 }
 
@@ -192,59 +212,41 @@ body {
     border-radius: 12px;
     cursor: pointer;
     font-weight: 600;
-    font-size: 0.95rem;
     display: flex;
     align-items: center;
     gap: 8px;
     transition: var(--transition);
-    box-shadow: var(--shadow-sm);
-    white-space: nowrap;
-}
-
-.tab-button i {
-    font-size: 1.1rem;
+    white-space: nowrap; /* Não quebra o texto do botão */
 }
 
 .tab-button:hover {
-    background: #e0f2fe; /* Azul bem clarinho */
-    color: var(--primary);
-    transform: translateY(-2px);
+    background: #f8fafc;
+    color: var(--text-main);
 }
 
 .tab-button.active {
     background: var(--primary);
     color: white;
-    box-shadow: 0 8px 15px -3px rgba(37, 99, 235, 0.4); /* Sombra azul brilhante */
-    transform: translateY(-1px);
+    box-shadow: 0 8px 15px -3px rgba(37, 99, 235, 0.4);
 }
 
 /* =========================================
    5. CONTEÚDO E TABELAS
    ========================================= */
 .tab-content {
-    background: transparent;
-}
-
-/* Estilo dos Botões de Ação (Barra de Ferramentas) */
-.action-buttons {
     background: var(--bg-card);
-    padding: 15px;
+    padding: 20px;
     border-radius: var(--radius);
-    margin-bottom: 20px;
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
 }
 
-/* Tabelas Profissionais */
 .data-table, .uniformes-table, .table-config, .table-geral {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     background: var(--bg-card);
     border-radius: var(--radius);
-    overflow: hidden;
+    overflow: hidden; /* Garante que as bordas arredondadas funcionem */
     box-shadow: var(--shadow-md);
     margin-bottom: 20px;
 }
@@ -255,7 +257,6 @@ th {
     font-weight: 700;
     text-transform: uppercase;
     font-size: 0.75rem;
-    letter-spacing: 0.05em;
     padding: 16px;
     text-align: left;
     border-bottom: 1px solid #e2e8f0;
@@ -281,6 +282,7 @@ tr.selected-row td {
     border-bottom-color: var(--primary);
 }
 
+
 /* =========================================
    6. BOTÕES GERAIS
    ========================================= */
@@ -297,91 +299,70 @@ button[id^="btn-"], .btn-confirmar, .action-buttons button {
     padding: 10px 20px;
     border-radius: 8px;
     font-weight: 600;
-    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+    box-shadow: var(--shadow-sm);
     transition: var(--transition);
     display: inline-flex;
     align-items: center;
     gap: 8px;
 }
 
-button[id^="btn-"]:hover, .btn-confirmar:hover, .action-buttons button:hover {
+.action-buttons button:hover, .btn-confirmar:hover {
     background: var(--primary-hover);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 8px -1px rgba(37, 99, 235, 0.3);
+    box-shadow: var(--shadow-md);
 }
 
-/* Botão Cancelar / Excluir */
-.btn-cancelar, .btn-danger {
-    background: #fee2e2;
-    color: var(--danger);
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-weight: 600;
-    transition: var(--transition);
-}
-
-.btn-cancelar:hover, .btn-danger:hover {
+/* Botão de Cancelamento/Exclusão */
+.btn-cancelar {
     background: var(--danger);
     color: white;
-    transform: translateY(-2px);
+    border: none;
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-weight: 600;
+    transition: var(--transition);
+    cursor: pointer;
 }
 
-/* Botões Pequenos (Entrada/Saida na tabela) */
-td button {
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    border-radius: 6px;
-    margin-right: 5px;
+.btn-cancelar:hover {
+    background: #c53030;
 }
 
 /* =========================================
-   7. MODAIS (Estilo Glassmorphism Suave e Flutuante)
+   7. MODAIS
    ========================================= */
-.modal, .config-modal {
-    display: none; /* Começa invisível por padrão */
-    position: fixed; /* Fixa na tela, flutuando sobre tudo */
+.modal {
+    display: none;
+    position: fixed;
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%; /* Ocupa a tela inteira */
-    overflow: auto; /* Permite rolar se o modal for muito alto */
-    
-    background-color: rgba(15, 23, 42, 0.75); /* Fundo escuro mais forte para foco */
-    backdrop-filter: blur(5px); /* Efeito de desfoque no fundo */
-    z-index: 9990; /* Garante que fique acima de tudo */
-    
-    /* Centralização vertical e horizontal suave via padding */
-    padding-top: 50px; 
-    padding-bottom: 50px;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+    overflow-y: auto;
+    padding: 20px 0;
 }
 
-#global-modal {
-    z-index: 9999 !important;
-}
-
-.modal-content, .config-modal-content {
-    background: var(--bg-card);
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); /* Sombra mais profunda */
-    animation: zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    
-    /* Centralização */
-    margin: 0 auto; /* Centraliza horizontalmente */
-    position: relative;
-    
-    width: 90%;
-    max-width: 600px; /* Largura padrão */
+.modal-content {
+    background: white;
+    margin: 5% auto;
     padding: 30px;
+    border-radius: 20px;
+    width: 90%;
+    max-width: 650px;
+    position: relative;
+    box-shadow: var(--shadow-lg);
+    animation: zoomIn 0.3s ease-out;
 }
 
-/* Modal de Configuração (Maior e mais alto) */
-.config-modal-content {
-    max-width: 1100px; 
-    height: 80vh; /* Ocupa 80% da altura da tela */
-    display: flex;
-    flex-direction: column;
+.close-button {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-muted);
 }
 
 .modal-content h3, .config-modal-title {
@@ -406,28 +387,62 @@ td button {
 .modal-content input:focus, .modal-content select:focus {
     background: white;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
-/* Botão Fechar (X) */
-.close-button, .config-close-button {
-    position: absolute;
-    top: 20px;
-    right: 25px;
-    font-size: 2rem;
-    color: #94a3b8;
-    cursor: pointer;
-    line-height: 0.7;
-    transition: color 0.2s;
+.input-group {
+    margin-bottom: 15px;
 }
 
-.close-button:hover, .config-close-button:hover {
-    color: var(--danger);
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: var(--text-main);
 }
+
 
 /* =========================================
-   8. ESTRUTURA DO MODAL DE CONFIGURAÇÃO
+   8. MODAL DE CONFIGURAÇÃO (Lateral)
    ========================================= */
+.config-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    z-index: 9998;
+    backdrop-filter: blur(4px);
+    overflow-y: auto;
+    padding: 20px 0;
+}
+
+.config-modal-content {
+    background: white;
+    margin: 2% auto;
+    padding: 25px;
+    border-radius: var(--radius);
+    width: 95%;
+    max-width: 1100px;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    box-shadow: var(--shadow-lg);
+    animation: zoomIn 0.3s ease-out;
+}
+
+.config-close-button {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
 .config-modal-body {
     display: flex;
     flex: 1;
@@ -439,90 +454,115 @@ td button {
 .config-sidebar {
     width: 250px;
     border-right: 1px solid #e2e8f0;
-    padding-right: 20px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    overflow-y: auto;
+    gap: 10px;
+    padding-right: 15px;
 }
 
 .config-content-area {
     flex: 1;
     overflow-y: auto;
-    padding-left: 10px;
+    padding-right: 15px; /* Espaço para scrollbar */
 }
 
 .config-submenu-button {
     text-align: left;
-    background: transparent;
-    color: var(--text-muted);
-    padding: 12px 15px;
-    border-radius: 10px;
+    background: none;
+    color: var(--text-main);
+    border: none;
+    padding: 10px 15px;
+    border-radius: 8px;
+    cursor: pointer;
     font-weight: 500;
-    box-shadow: none !important; /* Remove sombra padrão */
-    justify-content: flex-start; /* Alinha ícone e texto */
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .config-submenu-button:hover {
     background: #f1f5f9;
-    color: var(--primary);
-    transform: translateX(4px); /* Move para direita */
 }
 
 .config-submenu-button.active {
     background: var(--primary-light);
     color: var(--primary);
-    font-weight: 700;
-    border-left: 4px solid var(--primary);
-    border-radius: 4px 10px 10px 4px; /* Canto reto na esquerda */
+    font-weight: bold;
 }
 
+
 /* =========================================
-   9. TAGS DE STATUS (BADGES)
+   9. ESTILOS DE STATUS E TAGS
    ========================================= */
 .status-tag {
-    padding: 4px 12px;
+    padding: 4px 10px;
     border-radius: 20px;
     font-size: 0.75rem;
-    font-weight: 700;
+    font-weight: bold;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
     display: inline-block;
 }
 
-/* Cores das Tags */
-.conservacao-novo, .status-entregue, .status-ativo { 
-    background: #dcfce7; color: #166534; /* Verde */
+/* Status de Conservação/Tipos de Movimento */
+.conservacao-novo, .status-log-entregue {
+    background: #dcfce7;
+    color: #166534;
 }
-.conservacao-bom, .status-em_separacao { 
-    background: #dbeafe; color: #1e40af; /* Azul */
+
+.conservacao-bom, .status-log-transporte {
+    background: #dbeafe;
+    color: #1e40af;
 }
-.conservacao-regular, .status-pendente { 
-    background: #fef3c7; color: #92400e; /* Amarelo/Laranja */
+
+.conservacao-regular, .status-log-coleta {
+    background: #fef3c7;
+    color: #92400e;
 }
-.conservacao-danificado, .status-cancelado { 
-    background: #fee2e2; color: #991b1b; /* Vermelho */
+
+.conservacao-danificado, .status-log-cancelado {
+    background: #fee2e2;
+    color: #991b1b;
 }
-.conservacao-inservivel { 
-    background: #1e293b; color: #f8fafc; /* Preto/Cinza */
+
+.status-log-pendente {
+    background: #f8fafc;
+    color: #64748b;
 }
+
 
 /* =========================================
    10. ANIMAÇÕES
    ========================================= */
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes zoomIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 /* =========================================
@@ -534,39 +574,40 @@ td button {
         gap: 15px;
         text-align: center;
     }
-    
+
     .config-modal-body {
         flex-direction: column;
     }
-    
+
     .config-sidebar {
         width: 100%;
         border-right: none;
         border-bottom: 1px solid #e2e8f0;
         max-height: 150px;
         margin-bottom: 15px;
+        overflow-x: auto;
+        padding-bottom: 15px;
+        flex-direction: row;
+        flex-wrap: nowrap;
     }
     
-    .tabs {
-        padding-bottom: 15px;
+    .config-sidebar button {
+        flex-shrink: 0;
     }
-    input[type="text"], 
-    textarea {
-        text-transform: uppercase;
-    }
-/* =========================================
-   12. UNIFORMES
-   ========================================= */    
-   /* ------------ MELHORIAS TABELA UNIFORMES ------------ */
 
-.uniformes-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    background: #fff;
+    .tabs {
+        padding: 0;
+    }
 }
 
-/* Cabeçalho */
+
+/* =========================================
+   12. ESTILOS DE UNIFORMES ESPECÍFICOS
+   ========================================= */
+.uniformes-table {
+    font-size: 0.9em;
+}
+
 .uniformes-table thead tr:first-child th {
     background: #f3f6fb;
     font-weight: 700;
@@ -580,148 +621,69 @@ td button {
     padding: 10px;
     font-weight: bold;
     color: #2c3e50;
-    border-bottom: 2px solid #dfe4ea;
-}
-
-/* Linhas do corpo */
-.uniformes-table tbody tr {
-    border-bottom: 1px solid #ececec;
-}
-
-.uniformes-table tbody tr:nth-child(even) {
-    background: #fafafa;
 }
 
 .uniformes-table tbody td {
-    padding: 10px;
     text-align: center;
 }
 
-/* Tamanhos */
 .uniformes-table tbody td:first-child {
     font-weight: 600;
     background: #f7f9fc;
-    color: #34495e;
     border-right: 1px solid #e6e9ef;
 }
 
-/* Valores zero em cinza */
-.uniformes-table tbody td {
-    color: #2d3436;
-}
-.uniformes-table tbody td.zero-value {
-    color: #bdc3c7 !important;
-}
-
-/* Botões de movimentação (Ações no topo dos produtos) */
-.uniformes-table th button {
-    border: none;
-    padding: 4px 7px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: 0.2s;
+.uniformes-table input[type="number"] {
+    width: 60px;
+    text-align: center;
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
 }
 
-.uniformes-table th button i {
-    font-size: 12px;
-}
 
-/* Botão + (entrada) */
-.uniformes-table th button:nth-child(1) {
-    background: #e6f7ec;
-    color: #1e8b34;
-}
-.uniformes-table th button:nth-child(1):hover {
-    background: #d4f3df;
-}
-
-/* Botão - (saída) */
-.uniformes-table th button:nth-child(2) {
-    background: #fdecea;
-    color: #c0392b;
-}
-.uniformes-table th button:nth-child(2):hover {
-    background: #f9d7d3;
-}
-
-.badge-volume {
-    background: #2563eb;
-    color: #fff;
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    margin-left: 6px;
-}
 /* =========================================
    13. ESTILOS LOGÍSTICA
    ========================================= */
-.status-log-coleta {
-    background: #fef3c7; /* Amarelo */
-    color: #92400e;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.75rem;
-    text-transform: uppercase;
+
+.logistica-header {
+    background-color: #f7f9fc;
+    border: 1px solid #e2e8f0;
+    padding: 15px;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
 }
 
-.status-log-transporte {
-    background: #dbeafe; /* Azul */
-    color: #1e40af;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.75rem;
-    text-transform: uppercase;
+.logistica-card {
+    background: var(--bg-card);
+    border: 1px solid #e2e8f0;
+    padding: 20px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 15px;
+    transition: var(--transition);
 }
 
-.status-log-entregue {
-    background: #dcfce7; /* Verde */
-    color: #166534;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.75rem;
-    text-transform: uppercase;
+.logistica-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
 }
 
-/* Ocultar itens específicos no modal de config para perfil logistica */
-.logistica-hide {
-    display: none !important;
-}
-}
+
 /* =========================================
-   14. ESTILOS PEDIDO PRÉVIO & ALERTA
+   14. ESTILOS ADICIONAIS
    ========================================= */
 
-/* Grade de Pedido Prévio */
-.grade-container {
-    overflow-x: auto;
-    background: #fff;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: var(--shadow-sm);
-}
-
+/* Estilo para Tabela de grade (Uniformes/Tamanhos) */
 .tabela-grade {
-    width: 100%;
     border-collapse: collapse;
-    min-width: 800px;
+    width: 100%;
 }
-
 .tabela-grade th, .tabela-grade td {
     border: 1px solid #e2e8f0;
     padding: 8px;
     text-align: center;
 }
-
-.tabela-grade th {
-    background: #f1f5f9;
-    font-size: 0.8rem;
-    font-weight: 700;
-}
-
 .tabela-grade input {
     width: 60px;
     text-align: center;
@@ -761,24 +723,19 @@ td button {
     #print-area, #print-area * {
         visibility: visible;
     }
-    #print-area {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
+    .no-print {
+        display: none !important;
     }
-    .no-print { display: none !important; }
-}
-/* Estilo para a Logo no Header */
-.header-logo {
-    height: 45px; /* Altura ajustada para caber no header */
-    width: auto;  /* Mantém a proporção */
-    margin-right: 15px; /* Espaço entre a logo e os botões */
-    vertical-align: middle;
-}
-
-/* Ajuste para garantir alinhamento na div header-actions */
-.header-actions {
-    display: flex;
-    align-items: center; /* Alinha verticalmente no centro */
+    .config-modal, .tabs, .app-header {
+        display: none !important;
+    }
+    .app-container {
+        margin: 0;
+        padding: 0;
+        max-width: none;
+    }
+    /* Para perfil escola: esconde itens config para perfil logistica */
+    .logistica-hide {
+        display: none !important;
+    }
 }

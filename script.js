@@ -329,14 +329,11 @@ window.renderTab = async function(tabName) {
     if (tabName === 'uniformes_roupas') { renderTabUniformesRoupas(); return; }
     if (tabName === 'uniformes_calcados') { renderTabUniformesCalcados(); return; }
 
-    // --- NOVAS ROTAS (ADICIONE ISTO) ---
+    // --- NOVAS ROTAS ---
     if (tabName === 'logistica') { renderTabLogistica(); return; }
     if (tabName === 'historico_log') { renderTabHistoricoLog(); return; }
     if (tabName === 'pedido_previo') { renderTabPedidoPrevio(); return; }
     // ----------------------------------
-
-    // ... Resto da função original (loading, try/catch, catalogo, estoque_consumo, etc) ...
-    // (MANTENHA O CÓDIGO ORIGINAL DAQUI PARA BAIXO DENTRO DA FUNÇÃO)
     
     tabContentArea.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>';
 
@@ -349,11 +346,11 @@ window.renderTab = async function(tabName) {
              data = res;
         } 
         else if (tabName === 'estoque_consumo') {
+             // [MODIFICAÇÃO] Adicionado 'categoria' na seleção e removido local_fisico da lógica visual futura
              const { data: res } = await supabase.from('estoque_consumo')
-                .select('id, quantidade_atual, local_fisico, catalogo(nome, unidade_medida, estoque_minimo)').order('id');
+                .select('id, quantidade_atual, local_fisico, catalogo(nome, unidade_medida, estoque_minimo, categoria)').order('id');
              if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
         } 
-        // ... (Mantenha todos os outros else if originais: historico, patrimonio, pedidos) ...
         else if (tabName === 'historico') {
             const { data: res } = await supabase.from('historico_global')
                 .select('id, data_movimentacao, tipo_movimento, quantidade, responsavel_nome, observacao, catalogo(nome, categoria, unidade_medida), unidades!unidade_destino_id(nome)')
@@ -361,8 +358,9 @@ window.renderTab = async function(tabName) {
             data = res;
         }
         else if (tabName === 'patrimonio') {
+            // [MODIFICAÇÃO SOLICITAÇÃO 3] Adicionando setor_departamento e data_aquisicao (para simular Data Última Movimentação)
             let query = supabase.from('patrimonio')
-                .select('id, codigo_patrimonio, estado_conservacao, inservivel, catalogo(nome), unidades:unidade_id(nome)');
+                .select('id, codigo_patrimonio, estado_conservacao, inservivel, setor_departamento, data_aquisicao, catalogo(nome), unidades:unidade_id(nome)');
             if (userProfile.nivel === 'comum' && userProfile.unidadeId) {
                 query = query.eq('unidade_id', userProfile.unidadeId);
             }
@@ -395,27 +393,44 @@ window.renderTab = async function(tabName) {
 // --- FUNÇÃO ATUALIZADA: RENDER ACTION BUTTONS ---
 function renderActionButtons(tabName) {
     const isAdmin = ['admin', 'super'].includes(userProfile?.nivel);
-    let btns = '<div class="action-buttons">';
+    // Usamos flexbox com justify-content: space-between para separar botões da pesquisa
+    let btns = '<div class="action-buttons" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">';
+    
+    // Div wrapper para os botões (lado esquerdo)
+    let leftButtons = '<div style="display:flex; gap:10px;">';
 
     if (isAdmin) {
         if (tabName === 'catalogo') {
-            btns += `<button onclick="window.openModalCadastro('catalogo')"><i class="fas fa-plus"></i> Novo Item (Rápido)</button>`;
-            btns += `<button onclick="window.openModalEntrada(null)" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Nova Entrada</button>`;
+            leftButtons += `<button onclick="window.openModalCadastro('catalogo')"><i class="fas fa-plus"></i> Novo Item (Rápido)</button>`;
+            leftButtons += `<button onclick="window.openModalEntrada(null)" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Nova Entrada</button>`;
         }
         if (tabName === 'estoque_consumo') {
-            btns += `<button onclick="window.openModalEntrada('consumo')" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Consumo</button>`;
-            btns += `<button onclick="window.openModalSaidaRapida()" style="background-color: #ffc107; color: #333;"><i class="fas fa-arrow-up"></i> Saída Rápida</button>`;
+            leftButtons += `<button onclick="window.openModalEntrada('consumo')" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Consumo</button>`;
+            leftButtons += `<button onclick="window.openModalSaidaRapida()" style="background-color: #ffc107; color: #333;"><i class="fas fa-arrow-up"></i> Saída Rápida</button>`;
         }
         if (tabName === 'patrimonio') {
-            // REMOVIDO O BOTÃO DE INSERVÍVEL DAQUI
-            btns += `<button onclick="window.openModalEntrada('permanente')" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Patrimônio</button>`;
-            btns += `<button onclick="window.openModalMovimentarPatrimonio()" style="background-color: #17a2b8; color: white;"><i class="fas fa-exchange-alt"></i> Movimentar</button>`;
+            leftButtons += `<button onclick="window.openModalEntrada('permanente')" style="background-color: #28a745;"><i class="fas fa-arrow-down"></i> Entrada Patrimônio</button>`;
+            leftButtons += `<button onclick="window.openModalMovimentarPatrimonio()" style="background-color: #17a2b8; color: white;"><i class="fas fa-exchange-alt"></i> Movimentar</button>`;
         }
     }
     
     if (tabName === 'pedidos') {
-        btns += `<button id="btn-ver-pedido"><i class="fas fa-eye"></i> Gerenciar Pedido</button>`;
-        if (isAdmin) btns += `<button onclick="window.openModalCriarPedido()"><i class="fas fa-cart-plus"></i> Criar Pedido (Admin)</button>`;
+        leftButtons += `<button id="btn-ver-pedido"><i class="fas fa-eye"></i> Gerenciar Pedido</button>`;
+        if (isAdmin) leftButtons += `<button onclick="window.openModalCriarPedido()"><i class="fas fa-cart-plus"></i> Criar Pedido (Admin)</button>`;
+    }
+    
+    leftButtons += '</div>'; // Fecha div da esquerda
+    btns += leftButtons;
+
+    // [NOVO] Adiciona Campo de Pesquisa se for Material ou Patrimônio
+    if (tabName === 'estoque_consumo' || tabName === 'patrimonio') {
+        btns += `
+            <div style="position: relative;">
+                <i class="fas fa-search" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                <input type="text" id="table-search-input" placeholder="Pesquisar Item..." 
+                    style="padding: 8px 10px 8px 35px; border-radius: 20px; border: 1px solid #cbd5e1; width: 250px; outline: none;">
+            </div>
+        `;
     }
 
     btns += '</div>';
@@ -435,18 +450,25 @@ function renderTable(tabName, data) {
         });
     }
     else if (tabName === 'estoque_consumo') {
-        headers = ['Produto', 'Qtd. Atual', 'Local', 'Status'];
+        headers = ['Produto', 'Categoria', 'Qtd. Atual'];
         data.forEach(r => {
             const min = r.catalogo?.estoque_minimo || 0;
             const qtd = r.quantidade_atual || 0;
+            // Verifica a categoria vinda do join
+            const categoria = r.catalogo?.categoria || '-';
+            
             let alerta = (min > 0 && qtd <= min) ? '<span style="color:red; font-weight:bold;">(BAIXO)</span>' : '';
-            rows += `<tr data-id="${r.id}"><td>${r.catalogo?.nome || '?'} ${alerta}</td><td style="font-weight:bold;">${qtd} ${r.catalogo?.unidade_medida || ''}</td><td>${r.local_fisico || '-'}</td><td>Ativo</td></tr>`;
+            
+            rows += `<tr data-id="${r.id}">
+                <td>${r.catalogo?.nome || '?'} ${alerta}</td>
+                <td>${categoria}</td>
+                <td style="font-weight:bold;">${qtd} ${r.catalogo?.unidade_medida || ''}</td>
+            </tr>`;
         });
     }
     else if (tabName === 'historico') {
-        // ADICIONEI 'Usuário' NO CABEÇALHO ABAIXO
-        headers = ['Data', 'Usuário', 'Tipo', 'Item', 'Categoria', 'Qtd', 'Detalhes'];
-        
+        // [MODIFICAÇÃO SOLICITAÇÃO 4] Removida coluna Categoria e renomeada Detalhes para OBSERVAÇÕES
+        headers = ['Data', 'Usuário', 'Tipo', 'Item', 'Qtd', 'OBSERVAÇÕES'];
         data.forEach(r => {
             const dt = new Date(r.data_movimentacao).toLocaleString();
             let tipoClass = 'status-tag ';
@@ -454,24 +476,30 @@ function renderTable(tabName, data) {
             else if(r.tipo_movimento?.includes('saida')) tipoClass += 'conservacao-danificado';
             else tipoClass += 'conservacao-regular';
             
-            // ADICIONEI A COLUNA DO USUÁRIO (responsavel_nome) ABAIXO
             rows += `<tr>
                 <td style="font-size:0.85em;">${dt}</td>
                 <td style="font-weight:bold; color:#2563eb;">${r.responsavel_nome || 'Sistema'}</td>
                 <td><span class="${tipoClass}">${r.tipo_movimento}</span></td>
                 <td>${r.catalogo?.nome}</td>
-                <td>${r.catalogo?.categoria || '-'}</td>
                 <td style="font-weight:bold;">${r.quantidade}</td>
                 <td style="font-size:0.9em;">${r.observacao || ''}</td>
             </tr>`;
         });
     }
     else if (tabName === 'patrimonio') {
-        headers = ['Plaqueta', 'Item', 'Local Atual', 'Conservação'];
+        // [MODIFICAÇÃO SOLICITAÇÕES 3 & 5] Coluna Plaqueta -> Nº Identificador. Removido Conservação. Adicionado Setor/Depto e Data Última Movimentação.
+        headers = ['Nº IDENTIFICADOR', 'Item', 'Local Atual', 'SETOR/DEPARTAMENTO', 'DATA ÚLTIMA MOVIMENTAÇÃO'];
         data.forEach(r => { 
             const local = r.unidades?.nome || '<span style="color:red">Sem Local</span>';
-            let estadoDisplay = r.inservivel ? 'INSERVÍVEL' : r.estado_conservacao;
-            rows += `<tr data-id="${r.id}"><td>${r.codigo_patrimonio}</td><td>${r.catalogo?.nome}</td><td>${local}</td><td>${estadoDisplay}</td></tr>`; 
+            const setor = r.setor_departamento || '-';
+            const dataMov = r.data_aquisicao ? new Date(r.data_aquisicao).toLocaleDateString() : '-';
+            rows += `<tr data-id="${r.id}">
+                <td><strong>${r.codigo_patrimonio || '-'}</strong></td>
+                <td>${r.catalogo?.nome}</td>
+                <td>${local}</td>
+                <td>${setor}</td>
+                <td>${dataMov}</td>
+            </tr>`; 
         });
     }
     else if (tabName === 'pedidos') {
@@ -497,6 +525,37 @@ function setupTableEvents(tabName) {
             }
         });
     }
+
+    // [NOVO] Lógica de Pesquisa
+    const searchInput = document.getElementById('table-search-input');
+    if (searchInput) {
+        searchInput.addEventListener('keyup', function() {
+            const valor = this.value.toLowerCase();
+            const rows = document.querySelectorAll('.data-table tbody tr');
+            
+            rows.forEach(row => {
+                let textoItem = '';
+                
+                // Determina qual coluna é o "ITEM" baseado na aba
+                if (tabName === 'estoque_consumo') {
+                    // Aba Material: Coluna 0 é o Produto (Item)
+                    textoItem = row.cells[0]?.textContent || '';
+                } else if (tabName === 'patrimonio') {
+                    // Aba Patrimônio: Coluna 1 é o Item (Coluna 0 é Plaqueta)
+                    textoItem = row.cells[1]?.textContent || '';
+                } else {
+                    // Fallback genérico
+                    textoItem = row.textContent; 
+                }
+
+                if (textoItem.toLowerCase().includes(valor)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
     
     // Listener específico para Pedidos
     const btnVerPedido = document.getElementById('btn-ver-pedido');
@@ -506,8 +565,6 @@ function setupTableEvents(tabName) {
             window.openModalGerenciarPedido(selectedRowId);
         };
     }
-    
-    // (O listener do botão inservível foi removido pois o botão não existe mais)
 }
 
 // ============================================================================
@@ -1284,20 +1341,24 @@ window.confirmarEntradaGeral = async function() {
     const qtd = parseInt(document.getElementById("ent-qtd").value);
     let local = document.getElementById("ent-local").value;
     
-    // Novo campo capturado
     const setor = document.getElementById("ent-setor").value;
     const obs = document.getElementById("ent-obs").value;
 
     if(!prodId || qtd <= 0) return alert("Selecione um produto e uma quantidade válida.");
 
-    // ITEM 2: Validação Obrigatória de Local para Patrimônio
+    // [MODIFICAÇÃO] Validação Obrigatória para Consumo e Patrimônio
+    if (tipo === 'CONSUMO') {
+        if (!local || local === "") return alert("O campo 'Local de Destino' é obrigatório para entrada de consumo.");
+        if (!setor || setor === "") return alert("O campo 'Departamento / Setor' é obrigatório para entrada de consumo.");
+        if (!obs || obs.trim() === "") return alert("O campo 'Obs/Nota' é obrigatório para entrada de consumo.");
+    }
+
     if (tipo === 'PERMANENTE' && (!local || local === "")) {
         return alert("Para itens de Patrimônio, é OBRIGATÓRIO selecionar o Local de Destino.");
     }
 
     // Lógica Consumo
     if(tipo === 'CONSUMO') {
-        // Se for consumo e não tiver local, define nulo ou trata conforme regra (mantivemos lógica anterior)
         const { data: reg } = await supabase.from("estoque_consumo").select("*").eq("produto_id", prodId).single();
         if(reg) {
             await supabase.from("estoque_consumo").update({ quantidade_atual: reg.quantidade_atual + qtd }).eq("id", reg.id);
@@ -1305,7 +1366,9 @@ window.confirmarEntradaGeral = async function() {
             await supabase.from("estoque_consumo").insert({ produto_id: prodId, quantidade_atual: qtd });
         }
         
-        await registrarHistorico(prodId, qtd, 'ENTRADA_MATERIAL', obs, userProfile?.nome, local);
+        // Inclui o Setor na observação para histórico
+        const obsFinal = `[Setor: ${setor}] ${obs}`;
+        await registrarHistorico(prodId, qtd, 'ENTRADA_MATERIAL', obsFinal, userProfile?.nome, local);
         
         alert("Entrada de Material realizada!");
         window.closeModal();
@@ -1314,7 +1377,6 @@ window.confirmarEntradaGeral = async function() {
     // Lógica Patrimônio
     else if(tipo === 'PERMANENTE') {
         window.closeModal();
-        // Passamos o novo parâmetro 'setor' para a próxima função
         setTimeout(() => {
             window.abrirModalLotePatrimonio(prodId, nomeProd, qtd, local, obs, setor);
         }, 300);
@@ -1443,50 +1505,100 @@ window.openModalSaidaRapida = async function() {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
     
-    // Busca itens com saldo > 0
-    const { data: itens } = await supabase.from("estoque_consumo")
-        .select("id, quantidade_atual, catalogo(nome, id)").gt("quantidade_atual", 0);
-
-    content.innerHTML = `
-        <h3>Saída Rápida (Consumo)</h3>
-        <label>Item:</label>
-        <select id="sai-id">
-            ${itens.map(i => `<option value="${i.id}" data-prod="${i.catalogo.id}">${i.catalogo.nome} (Saldo: ${i.quantidade_atual})</option>`).join('')}
-        </select>
-        <label>Quantidade:</label><input type="number" id="sai-qtd" value="1">
-        <label>Responsável/Setor:</label><input type="text" id="sai-resp">
-        <div style="margin-top:15px; text-align:right">
-            <button class="btn-confirmar" onclick="window.confirmarSaidaRapida()">Baixar</button>
-        </div>
-    `;
+    // Feedback de carregamento
+    content.innerHTML = '<p style="padding:20px; text-align:center;">Carregando dados...</p>';
     modal.style.display = 'block';
+
+    try {
+        // [MODIFICAÇÃO] Carrega itens, unidades e setores
+        const [ { data: itens }, { data: locais }, { data: setores } ] = await Promise.all([
+            supabase.from("estoque_consumo").select("id, quantidade_atual, catalogo(nome, id)").gt("quantidade_atual", 0),
+            supabase.from('unidades').select('*').order('nome'),
+            supabase.from('setores').select('*').order('nome')
+        ]);
+
+        // Monta selects
+        let optionsLocais = '<option value="">Selecione o Local...</option>';
+        if (locais) locais.forEach(l => optionsLocais += `<option value="${l.id}">${l.nome}</option>`);
+
+        let optionsSetores = '<option value="">Selecione o Setor...</option>';
+        if (setores) setores.forEach(s => optionsSetores += `<option value="${s.nome}">${s.nome}</option>`);
+
+        content.innerHTML = `
+            <h3>Saída Rápida (Consumo)</h3>
+            
+            <label>Item:</label>
+            <select id="sai-id">
+                ${itens.map(i => `<option value="${i.id}" data-prod="${i.catalogo.id}">${i.catalogo.nome} (Saldo: ${i.quantidade_atual})</option>`).join('')}
+            </select>
+            
+            <label>Quantidade:</label>
+            <input type="number" id="sai-qtd" value="1">
+
+            <label>Local:</label>
+            <select id="sai-local">
+                ${optionsLocais}
+            </select>
+
+            <label>Departamento / Setor:</label>
+            <select id="sai-setor">
+                ${optionsSetores}
+            </select>
+            
+            <label>Responsável:</label>
+            <input type="text" id="sai-resp" placeholder="Nome do recebedor">
+            
+            <div style="margin-top:15px; text-align:right">
+                <button class="btn-confirmar" onclick="window.confirmarSaidaRapida()">Baixar</button>
+            </div>
+        `;
+    } catch (e) {
+        content.innerHTML = `<p style="color:red">Erro ao carregar formulário: ${e.message}</p>`;
+    }
 }
 
 window.confirmarSaidaRapida = async function() {
     const idEstoque = document.getElementById("sai-id").value;
     const select = document.getElementById("sai-id");
-    const prodId = select.options[select.selectedIndex].dataset.prod;
+    const prodId = select.options[select.selectedIndex]?.dataset.prod;
     const qtd = parseInt(document.getElementById("sai-qtd").value);
     
-    // [CORREÇÃO] Captura o input para usar na observação, mantendo o usuário logado como responsável
-    const infoDestino = document.getElementById("sai-resp").value;
-    const usuarioLogado = userProfile?.nome || 'Usuário';
-    
-    // Se houver texto no input, adiciona aos detalhes. Se não, mantém apenas "Saída Rápida".
-    const observacaoFinal = infoDestino ? `Saída Rápida: ${infoDestino}` : 'Saída Rápida';
+    // [MODIFICAÇÃO] Captura dos novos campos
+    const localId = document.getElementById("sai-local").value;
+    const setorNome = document.getElementById("sai-setor").value;
+    const responsavel = document.getElementById("sai-resp").value;
 
-    if(!qtd || qtd <= 0) return alert("Quantidade inválida.");
+    // Validações
+    if (!prodId) return alert("Selecione um produto.");
+    if (!qtd || qtd <= 0) return alert("Quantidade inválida.");
+    
+    // [MODIFICAÇÃO] Validação Obrigatória
+    if (!localId || localId === "") return alert("O campo 'Local' é obrigatório.");
+    if (!setorNome || setorNome === "") return alert("O campo 'Departamento / Setor' é obrigatório.");
+    if (!responsavel || responsavel.trim() === "") return alert("O campo 'Responsável' é obrigatório.");
 
     const { data: item } = await supabase.from("estoque_consumo").select("quantidade_atual").eq("id", idEstoque).single();
     
     if(!item || item.quantidade_atual < qtd) return alert("Saldo insuficiente.");
 
+    // Atualiza Estoque
     await supabase.from("estoque_consumo").update({ quantidade_atual: item.quantidade_atual - qtd }).eq("id", idEstoque);
     
-    // [CORREÇÃO] Ordem corrigida: (prodId, qtd, tipo, OBSERVACAO, RESPONSAVEL)
-    await registrarHistorico(prodId, qtd, 'SAIDA_MATERIAL', observacaoFinal, usuarioLogado);
+    // [MODIFICAÇÃO] Monta observação com Setor e Responsável (recebedor)
+    // Passamos o localId como unidade de destino
+    const observacaoFinal = `Saída Rápida para Setor: ${setorNome}. Retirado por: ${responsavel}`;
+    const usuarioLogado = userProfile?.nome || 'Usuário'; // Quem operou o sistema
+
+    await registrarHistorico(
+        prodId, 
+        qtd, 
+        'SAIDA_MATERIAL', 
+        observacaoFinal, 
+        usuarioLogado,
+        localId // Passa o ID do Local selecionado
+    );
     
-    alert("Saída registrada.");
+    alert("Saída registrada com sucesso.");
     window.closeModal();
     window.renderTab("estoque_consumo");
 }
