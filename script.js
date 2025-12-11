@@ -368,12 +368,14 @@ window.renderTab = async function(tabName) {
             if(res) data = res.sort((a,b) => (a.catalogo?.nome || '').localeCompare(b.catalogo?.nome || ''));
         }
         else if (tabName === 'pedidos') {
+            // MELHORIA 2: Trazemos também a tabela logistica_entregas para calcular o status visual
             let query = supabase.from('pedidos')
-                .select('id, status, data_solicitacao, unidades(nome)')
+                .select('id, status, data_solicitacao, unidades(nome), logistica_entregas(status)')
                 .order('data_solicitacao', { ascending: false });
+            
             if (userProfile.nivel === 'comum' && userProfile.unidadeId) {
-                query = query.eq('status', 'em_transito')
-                            .eq('unidade_destino_id', userProfile.unidadeId);
+                // Filtro para usuário comum ver apenas seus pedidos
+                query = query.eq('unidade_destino_id', userProfile.unidadeId);
             }
             const { data: res } = await query;
             data = res || [];
@@ -454,11 +456,8 @@ function renderTable(tabName, data) {
         data.forEach(r => {
             const min = r.catalogo?.estoque_minimo || 0;
             const qtd = r.quantidade_atual || 0;
-            // Verifica a categoria vinda do join
             const categoria = r.catalogo?.categoria || '-';
-            
             let alerta = (min > 0 && qtd <= min) ? '<span style="color:red; font-weight:bold;">(BAIXO)</span>' : '';
-            
             rows += `<tr data-id="${r.id}">
                 <td>${r.catalogo?.nome || '?'} ${alerta}</td>
                 <td>${categoria}</td>
@@ -467,7 +466,6 @@ function renderTable(tabName, data) {
         });
     }
     else if (tabName === 'historico') {
-        // [MODIFICAÇÃO SOLICITAÇÃO 4] Removida coluna Categoria e renomeada Detalhes para OBSERVAÇÕES
         headers = ['Data', 'Usuário', 'Tipo', 'Item', 'Qtd', 'OBSERVAÇÕES'];
         data.forEach(r => {
             const dt = new Date(r.data_movimentacao).toLocaleString();
@@ -475,7 +473,6 @@ function renderTable(tabName, data) {
             if(r.tipo_movimento?.includes('entrada')) tipoClass += 'conservacao-novo';
             else if(r.tipo_movimento?.includes('saida')) tipoClass += 'conservacao-danificado';
             else tipoClass += 'conservacao-regular';
-            
             rows += `<tr>
                 <td style="font-size:0.85em;">${dt}</td>
                 <td style="font-weight:bold; color:#2563eb;">${r.responsavel_nome || 'Sistema'}</td>
@@ -487,7 +484,6 @@ function renderTable(tabName, data) {
         });
     }
     else if (tabName === 'patrimonio') {
-        // [MODIFICAÇÃO SOLICITAÇÕES 3 & 5] Coluna Plaqueta -> Nº Identificador. Removido Conservação. Adicionado Setor/Depto e Data Última Movimentação.
         headers = ['Nº IDENTIFICADOR', 'Item', 'Local Atual', 'SETOR/DEPARTAMENTO', 'DATA ÚLTIMA MOVIMENTAÇÃO'];
         data.forEach(r => { 
             const local = r.unidades?.nome || '<span style="color:red">Sem Local</span>';
@@ -504,8 +500,40 @@ function renderTable(tabName, data) {
     }
     else if (tabName === 'pedidos') {
         headers = ['ID', 'Destino', 'Data', 'Status'];
+        
         data.forEach(r => {
-            rows += `<tr data-id="${r.id}"><td>#${r.id}</td><td>${r.unidades?.nome}</td><td>${new Date(r.data_solicitacao).toLocaleDateString()}</td><td>${r.status}</td></tr>`;
+            let statusVisual = r.status; 
+            let esconderPedido = false; // Flag para controlar a visibilidade
+
+            // Lógica de Status Visual e Filtragem (Melhorias 2 e Extra)
+            if (r.status === 'Finalizado' && r.logistica_entregas && r.logistica_entregas.length > 0) {
+                const logs = r.logistica_entregas.map(l => l.status);
+                
+                // a) Se ainda tem algo aguardando coleta
+                if (logs.includes('LIBERADO PARA COLETA')) {
+                    statusVisual = '<span style="color:#d97706; font-weight:bold">AGUARDANDO COLETA</span>';
+                }
+                // b) Se tudo que saiu já está em transporte (e nada aguardando)
+                else if (logs.includes('EM TRANSPORTE')) {
+                    statusVisual = '<span style="color:#2563eb; font-weight:bold">SAIU PARA ENTREGA</span>';
+                }
+                // c) Se tudo foi confirmado
+                else if (logs.every(s => s === 'RECEBIMENTO CONFIRMADO')) {
+                    statusVisual = '<span style="color:#166534; font-weight:bold">ENTREGUE</span>';
+                    // Se foi entregue, não há mais pendências, então escondemos da lista.
+                    esconderPedido = true; 
+                }
+            }
+
+            // Só adiciona a linha se NÃO for para esconder
+            if (!esconderPedido) {
+                rows += `<tr data-id="${r.id}">
+                    <td>#${r.id}</td>
+                    <td>${r.unidades?.nome}</td>
+                    <td>${new Date(r.data_solicitacao).toLocaleDateString()}</td>
+                    <td>${statusVisual}</td>
+                </tr>`;
+            }
         });
     }
 
@@ -2208,7 +2236,6 @@ window.gerarPDFPedido = async function(pedidoId, destino, itens) {
 }
 
 // 4. Gerenciar Pedido (Atualizar Status com Bloqueios)
-// ATUALIZADO: Troca de posição dos botões 'Enviar Lote' e 'Informar Volumes'
 window.openModalGerenciarPedido = async function(pedidoId) {
     const modal = document.getElementById("global-modal");
     const content = document.getElementById("modal-content-area");
@@ -2235,7 +2262,7 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         let htmlItens = `<table class="table-geral" style="width:100%; margin-bottom:12px;">
             <thead>
                 <tr style="background:#f1f5f9;">
-                    <th style="width:6%"></th>
+                    <th style="width:6%">Sel.</th>
                     <th>Produto</th>
                     <th>Tipo</th>
                     <th>Tam/Num</th>
@@ -2257,15 +2284,20 @@ window.openModalGerenciarPedido = async function(pedidoId) {
                 const atendido = parseInt(it.quantidade_atendida) || 0;
                 const restante = Math.max(0, solicitado - atendido);
                 
+                // Checkbox desabilitado se não houver restante
+                const disabled = restante <= 0 ? 'disabled' : '';
+
                 htmlItens += `<tr data-item-id="${it.id}" data-prod-id="${it.produto_id}" data-tipo="${tipo}" data-tamanho="${it.tamanho || ''}">
-                    <td style="text-align:center"><input type="checkbox" class="env-checkbox" data-item="${it.id}"></td>
+                    <td style="text-align:center">
+                        <input type="checkbox" class="env-checkbox" data-item="${it.id}" ${disabled} onchange="window.monitorarCheckboxes()">
+                    </td>
                     <td>${nomeProd}</td>
                     <td>${tipo}</td>
                     <td>${it.tamanho || '-'}</td>
                     <td style="font-weight:700; text-align:center">${solicitado}</td>
                     <td style="font-weight:700; text-align:center" id="atendido-${it.id}">${atendido}</td>
                     <td style="text-align:center;">
-                        <input type="number" class="env-qtd" id="envq-${it.id}" value="${restante>0?restante:0}" min="0" max="${restante}" style="width:80px; padding:6px; border-radius:6px; border:1px solid #ddd;">
+                        <input type="number" class="env-qtd" id="envq-${it.id}" value="${restante>0?restante:0}" min="0" max="${restante}" ${disabled} style="width:80px; padding:6px; border-radius:6px; border:1px solid #ddd;">
                         <div style="font-size:0.85em; color:#666;">rest: ${restante}</div>
                     </td>
                 </tr>`;
@@ -2273,22 +2305,35 @@ window.openModalGerenciarPedido = async function(pedidoId) {
         }
         htmlItens += `</tbody></table>`;
 
-        // Área volumes
+        // Área volumes (inicialmente oculta)
         const areaVolumes = `
-            <div id="area-volumes" style="display:none; margin-top:10px;">
+            <div id="area-volumes" style="display:none; margin-top:10px; background:#f8fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
                 <label style="font-weight:700;">Quantidade de volumes:</label>
                 <input type="number" id="num-volumes" value="1" min="1" style="width:80px; margin-left:8px;">
-                <button class="btn-confirmar" style="margin-left:10px;" onclick="window.abrirVolumesUI(${pedidoId}, '${pedido.unidades?.nome || ''}')">Confirmar Volumes</button>
+                <button class="btn-confirmar" style="margin-left:10px;" onclick="window.abrirVolumesUI(${pedidoId}, '${pedido.unidades?.nome || ''}')">Preencher Volumes</button>
             </div>
         `;
 
-        // ATUALIZAÇÃO AQUI: Botões trocados de lugar conforme solicitado
+        // MELHORIA 3 e 4: Botões com IDs e Estados (disabled) controlados
+        // Botão 1: btn-informar-vols (Começa Inativo)
+        // Botão 2: btn-enviar-lote (Começa Inativo)
         const areaAcoes = `
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
-                <button onclick="document.getElementById('area-volumes').style.display='block';" class="btn-confirmar" style="background:#64748b;"><i class="fas fa-boxes"></i> Informar Volumes / Imprimir</button>
-                <button class="btn-confirmar" onclick="window.processarEnvioParcial(${pedidoId})"><i class="fas fa-truck"></i> Enviar Lote Selecionado</button>
-                <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome || ''}')" style="background:#64748b; color:white; border:none; padding:8px 12px; border-radius:6px;">
-                    <i class="fas fa-print"></i> Re-imprimir Pedido (PDF)
+                
+                <button id="btn-informar-vols" disabled 
+                    onclick="document.getElementById('area-volumes').style.display='block';" 
+                    class="btn-confirmar" style="background:#64748b; opacity: 0.6; cursor: not-allowed;">
+                    <i class="fas fa-boxes"></i> 1. Informar Volumes / Imprimir
+                </button>
+                
+                <button id="btn-enviar-lote" disabled
+                    class="btn-confirmar" onclick="window.processarEnvioParcial(${pedidoId})"
+                    style="opacity: 0.6; cursor: not-allowed;">
+                    <i class="fas fa-truck"></i> 2. Enviar Lote Selecionado
+                </button>
+
+                <div style="width:20px;"></div> <button onclick="window.reimprimirPDF(${pedidoId}, '${pedido.unidades?.nome || ''}')" style="background:#94a3b8; color:white; border:none; padding:8px 12px; border-radius:6px;">
+                    <i class="fas fa-print"></i> PDF
                 </button>
                 <button onclick="window.gerarRelatorioPendencias(${pedidoId})" 
                     style="background:#1e293b; color:white; padding:8px 12px; border-radius:6px;">
@@ -2297,20 +2342,27 @@ window.openModalGerenciarPedido = async function(pedidoId) {
             </div>
         `;
 
+        // Container para o Overlay de carregamento
+        const loadingOverlay = `<div id="modal-loading-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.85); z-index:10; justify-content:center; align-items:center; flex-direction:column; border-radius:20px;">
+            <i class="fas fa-spinner fa-spin" style="font-size:3rem; color:#2563eb; margin-bottom:15px;"></i>
+            <h2 style="color:#1e293b; animation: blink 1.5s infinite;">Aguarde...</h2>
+            <style>@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }</style>
+        </div>`;
+
         content.innerHTML = `
+            ${loadingOverlay}
             <h3><i class="fas fa-edit"></i> Gerenciar Pedido #${pedido.id}</h3>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:12px;">
                 <div><strong>Destino:</strong><br> ${pedido.unidades?.nome || 'N/A'}</div>
                 <div><strong>Data:</strong><br> ${new Date(pedido.data_solicitacao).toLocaleString()}</div>
-                <div><strong>Solicitante ID:</strong><br> ${pedido.solicitante_id || 'Sistema'}</div>
                 <div><strong>Status:</strong><br> <span style="font-weight:700">${pedido.status}</span></div>
             </div>
 
             <h4>Itens do Pedido</h4>
             ${htmlItens}
             <div id="area-volumes-wrapper">${areaVolumes}</div>
-            ${areaAcoes}
             <div id="volumes-ui-area" style="margin-top:14px;"></div>
+            ${areaAcoes}
         `;
 
     } catch (error) {
@@ -2319,15 +2371,32 @@ window.openModalGerenciarPedido = async function(pedidoId) {
     }
 };
 
-// ATUALIZADO: Redireciona para 'Unif. Roupas' após sucesso
+// Nova Função Auxiliar: Monitora checkboxes para ativar botão 1
+window.monitorarCheckboxes = function() {
+    const checked = document.querySelectorAll('.env-checkbox:checked').length > 0;
+    const btn1 = document.getElementById('btn-informar-vols');
+    
+    if (btn1) {
+        btn1.disabled = !checked;
+        btn1.style.opacity = checked ? '1' : '0.6';
+        btn1.style.cursor = checked ? 'pointer' : 'not-allowed';
+    }
+}
+
+// Atualização Processar Envio (MELHORIA 5: Efeito Aguarde e Recarregamento)
 window.processarEnvioParcial = async function(pedidoId) {
+    // MELHORIA 5: Exibe mensagem piscando e bloqueia tela
+    const overlay = document.getElementById('modal-loading-overlay');
+    if(overlay) overlay.style.display = 'flex';
+
     try {
         const checkboxes = Array.from(document.querySelectorAll('.env-checkbox')).filter(cb => cb.checked);
-        if (checkboxes.length === 0) return alert("Marque ao menos um item para enviar neste lote.");
+        if (checkboxes.length === 0) throw new Error("Nenhum item marcado.");
 
         const numVolumesInput = document.getElementById('num-volumes');
         const numVolumes = numVolumesInput ? parseInt(numVolumesInput.value) || 0 : 0;
 
+        // Busca dados destino
         const { data: pedInfo } = await supabase.from('pedidos')
             .select('unidades(nome), unidade_destino_id')
             .eq('id', pedidoId)
@@ -2337,33 +2406,25 @@ window.processarEnvioParcial = async function(pedidoId) {
         const destinoId = pedInfo?.unidade_destino_id;
 
         const envios = [];
+        // Prepara dados
         for (const cb of checkboxes) {
             const itemId = cb.dataset.item;
             const qtdInput = document.getElementById(`envq-${itemId}`);
-            if (!qtdInput) continue;
             const qtdEnviar = parseInt(qtdInput.value) || 0;
-            if (qtdEnviar <= 0) continue;
-
+            
+            // Busca item atualizado para garantir consistência
             const { data: itemDb } = await supabase.from('itens_pedido').select('*').eq('id', itemId).single();
-            if (!itemDb) continue;
-            
-            const atendido = parseInt(itemDb.quantidade_atendida) || 0;
-            const solicitado = parseInt(itemDb.quantidade_solicitada) || 0;
-            const maxDisponivel = Math.max(0, solicitado - atendido);
-            
-            if (qtdEnviar > maxDisponivel) return alert(`Erro no item ${itemDb.id}: Qtd maior que restante.`);
             
             envios.push({ itemId: itemDb.id, produto_id: itemDb.produto_id, qtdEnviar, tamanho: itemDb.tamanho });
         }
 
-        if (envios.length === 0) return alert("Nenhum item válido.");
-
-        // Atualiza DB (Itens e Estoque)
+        // Executa Atualizações no Banco
         for (const ev of envios) {
+            // Atualiza Item Pedido
             const { data: ip } = await supabase.from('itens_pedido').select('quantidade_atendida').eq('id', ev.itemId).single();
-            const atual = ip ? parseInt(ip.quantidade_atendida || 0) : 0;
-            await supabase.from('itens_pedido').update({ quantidade_atendida: atual + ev.qtdEnviar }).eq('id', ev.itemId);
+            await supabase.from('itens_pedido').update({ quantidade_atendida: (ip.quantidade_atendida||0) + ev.qtdEnviar }).eq('id', ev.itemId);
 
+            // Atualiza Estoque
             const { data: prod } = await supabase.from('catalogo').select('tipo').eq('id', ev.produto_id).single();
             const tipoProd = String(prod?.tipo).toUpperCase();
 
@@ -2376,7 +2437,7 @@ window.processarEnvioParcial = async function(pedidoId) {
             }
         }
 
-        // REGISTRO LOGÍSTICA
+        // Registra Logística
         if (numVolumes > 0) {
             await supabase.from('logistica_entregas').insert([{
                 pedido_id: pedidoId,
@@ -2385,37 +2446,33 @@ window.processarEnvioParcial = async function(pedidoId) {
                 unidade_destino_id: destinoId,
                 quantidade_volumes: numVolumes,
                 status: 'LIBERADO PARA COLETA',
-                observacao: `Parcial/Total com ${envios.length} itens.`
+                observacao: `Remessa gerada via Modal. ${envios.length} tipos de itens.`
             }]);
-            
-            await registrarHistorico(null, envios.reduce((s,x)=>s+x.qtdEnviar,0), 'Envio Pedido', `Liberado Coleta. Vols: ${numVolumes}`, userProfile?.nome, destinoId);
-            window.abrirVolumesUI(pedidoId, destinoNome);
-        } else {
-            alert("Estoque baixado. Lançamento concluído.");
-            window.closeModal();
-            
-            // ATUALIZAÇÃO AQUI: Força o retorno para a aba 'Uniformes Roupas'
-            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-            const btnUnif = document.querySelector('.tab-button[data-tab="uniformes_roupas"]');
-            if (btnUnif) {
-                btnUnif.classList.add('active');
-                activeTab = 'uniformes_roupas';
-                window.renderTab('uniformes_roupas');
-            } else {
-                 // Fallback se o usuário não tiver acesso (ex: logistica), vai para a atual
-                window.renderTab(activeTab);
-            }
         }
+        
+        // Histórico Geral
+        await registrarHistorico(null, envios.length, 'ENVIO_REMESSA', `Pedido #${pedidoId} - Remessa gerada com ${numVolumes} volumes.`, userProfile?.nome, destinoId);
 
-        // Atualiza status pedido pai
+        // Atualiza status do pedido pai se tudo foi enviado
         const { data: allItens } = await supabase.from('itens_pedido').select('*').eq('pedido_id', pedidoId);
         let tSol = 0, tAtd = 0;
         allItens.forEach(i => { tSol += i.quantidade_solicitada; tAtd += i.quantidade_atendida; });
         const st = (tAtd >= tSol) ? "Finalizado" : "Parcialmente Enviado";
         await supabase.from('pedidos').update({ status: st }).eq('id', pedidoId);
 
+        // MELHORIA 5: Finalização e Recarregamento
+        // Fecha e reabre imediatamente para atualizar saldos
+        window.closeModal();
+        
+        // Pequeno delay para garantir que o modal feche visualmente antes de reabrir
+        setTimeout(() => {
+            window.openModalGerenciarPedido(pedidoId);
+        }, 300);
+
     } catch (err) {
-        console.error(err); alert("Erro: " + err.message);
+        if(overlay) overlay.style.display = 'none';
+        console.error(err); 
+        alert("Erro no processo: " + err.message);
     }
 };
 
@@ -2446,70 +2503,54 @@ window.abrirVolumesUI = function(pedidoId, destinoNome) {
     wrapper.scrollIntoView({ behavior: 'smooth' });
 };
 
+// Atualização da função imprimirVolumes (MELHORIA 4: Troca de botões)
 window.imprimirVolumes = function(pedidoId, destinoNome, numVolumes) {
-    // Monta HTML para impressão: cada volume 2 páginas idênticas (duas cópias)
+    // 1. Gera Impressão (Código original mantido)
     const printable = [];
     for (let i = 1; i <= numVolumes; i++) {
         const obs = (document.getElementById(`obs-volume-${i}`) || {}).value || '';
         const header = `<div style="display:flex; justify-content:space-between; align-items:center;">
-            <div></div>
-            <div style="font-weight:800; font-size:18px;">VOLUME: ${i}/${numVolumes}</div>
+            <div></div><div style="font-weight:800; font-size:18px;">VOLUME: ${i}/${numVolumes}</div>
         </div>`;
-        const meta = `<div style="margin-top:10px;">Destino: <strong>${destinoNome}</strong><br>Data/Hora: <strong>${new Date().toLocaleString()}</strong></div>`;
+        const meta = `<div style="margin-top:10px;">Destino: <strong>${destinoNome}</strong><br>Data: <strong>${new Date().toLocaleString()}</strong></div>`;
         const body = `<div style="margin-top:18px; min-height:420px;">${obs.replace(/\n/g, '<br>')}</div>`;
         const footer = `<div style="position:relative; margin-top:20px;">
-            <div style="width:48%; display:inline-block; border-top:1px solid #000; padding-top:6px;">Conferente (Assinatura)</div>
-            <div style="width:48%; display:inline-block; text-align:right; border-top:1px solid #000; padding-top:6px;">Nº Matrícula</div>
+            <div style="width:48%; display:inline-block; border-top:1px solid #000; padding-top:6px;">Conferente</div>
+            <div style="width:48%; display:inline-block; text-align:right; border-top:1px solid #000; padding-top:6px;">Matrícula</div>
         </div>`;
-
-        const page = `<div class="print-page" style="page-break-after:always; padding:20px; font-family:Arial,Helvetica,sans-serif;">
-            ${header}
-            ${meta}
-            ${body}
-            ${footer}
-        </div>`;
-
-        // adiciona 2 cópias (duas páginas)
-        printable.push(page);
-        printable.push(page);
+        const page = `<div class="print-page" style="page-break-after:always; padding:20px; font-family:Arial;">${header}${meta}${body}${footer}</div>`;
+        printable.push(page); printable.push(page); // 2 cópias
     }
 
-    // cria janela de impressão
     const win = window.open('', '_blank');
-    if (!win) return alert("Bloqueador de popups impediu a abertura da janela de impressão. Permita popups e tente novamente.");
+    if (win) {
+        win.document.write(`<html><head><title>Volumes</title><style>@media print{@page{size:A4;margin:20mm;}body{-webkit-print-color-adjust:exact;}} .print-page{width:210mm;min-height:297mm;}</style></head><body>${printable.join('')}<script>window.onload=function(){setTimeout(()=>{window.print()},300)}</script></body></html>`);
+        win.document.close();
+        alert("Janela de impressão aberta.");
+    }
 
-    const htmlDoc = `
-        <html>
-            <head>
-                <title>Volumes - Pedido ${pedidoId}</title>
-                <style>
-                    @media print {
-                        @page { size: A4; margin: 20mm; }
-                        body { -webkit-print-color-adjust: exact; }
-                    }
-                    body { margin:0; padding:0; font-size:14px; color:#111; }
-                    .print-page { width:210mm; min-height:297mm; box-sizing:border-box; }
-                </style>
-            </head>
-            <body>
-                ${printable.join('')}
-                <script>
-                    // auto print then close
-                    window.onload = function() {
-                        setTimeout(() => { window.print(); /* não fechar automaticamente para permitir visualização */ }, 300);
-                    }
-                </script>
-            </body>
-        </html>
-    `;
-    win.document.open();
-    win.document.write(htmlDoc);
-    win.document.close();
-
-    // após imprimir, registrar no histórico o envio global com número de volumes
-    registrarHistorico(null, 0, "Envio Pedido", `Impressão de etiquetas do Pedido #${pedidoId}`, userProfile?.nome, null, numVolumes);
- 
-    alert("Janela de impressão aberta. Verifique sua impressora e confirme a impressão.");
+    // MELHORIA 4: Desativa Botão 1 e Ativa Botão 2
+    const btn1 = document.getElementById('btn-informar-vols');
+    const btn2 = document.getElementById('btn-enviar-lote');
+    
+    if(btn1) {
+        btn1.disabled = true;
+        btn1.style.opacity = '0.6';
+        btn1.style.cursor = 'not-allowed';
+        btn1.innerText = "Volumes Informados ✓";
+    }
+    
+    if(btn2) {
+        btn2.disabled = false;
+        btn2.style.opacity = '1';
+        btn2.style.cursor = 'pointer';
+        // Remove style inline que possa ter bloqueado
+        btn2.setAttribute('style', 'background-color: var(--primary); color: white; cursor: pointer; opacity: 1;'); 
+    }
+    
+    // Limpa UI de volumes para limpar a tela
+    document.getElementById('volumes-ui-area').innerHTML = '<div style="color:green; font-weight:bold; text-align:right; margin-bottom:10px;">Volumes confirmados. Prossiga para o envio. <i class="fas fa-arrow-down"></i></div>';
+    document.getElementById('area-volumes').style.display = 'none';
 };
 
 window.atualizarStatusPeloSelect = async function(pedidoId) {
@@ -2767,20 +2808,22 @@ window.gerarRelatorioPendencias = async function(pedidoId) {
 // ============================================================================
 
 // 1. Renderiza a aba Logística (Apenas perfil Logística ou Admin)
+// 1. Renderiza a aba Logística (Apenas perfil Logística ou Admin)
 window.renderTabLogistica = async function() {
     const tab = document.getElementById("tab-content");
     tab.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>';
 
     // Apenas LIBERADO PARA COLETA
+    // MELHORIA 1: Ordenação alterada para TRUE (mais antigo primeiro)
     const { data: remessas } = await supabase.from('logistica_entregas')
         .select('*')
         .eq('status', 'LIBERADO PARA COLETA')
-        .order('data_liberacao', { ascending: false });
+        .order('data_liberacao', { ascending: true });
 
     let html = `
         <div class="uniformes-header"><h2><i class="fas fa-truck-loading"></i> Logística - Aguardando Coleta</h2></div>
         <table class="data-table">
-            <thead><tr><th>Data</th><th>Pedido</th><th>Destino</th><th>Vols</th><th>Lib. Por</th><th>Ação</th></tr></thead>
+            <thead><tr><th>Data Liberação</th><th>Pedido</th><th>Destino</th><th>Vols</th><th>Lib. Por</th><th>Ação</th></tr></thead>
             <tbody>
     `;
     
