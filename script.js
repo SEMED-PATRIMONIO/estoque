@@ -3301,61 +3301,6 @@ window.gerarPDFPedidoPrevio = async function(pedidoId) {
     doc.save(`Pedido_Previo_ID_${pedido.id}_${pedido.unidades.nome}.pdf`);
 }
 
-window.openModalPedidoPrevio = async function() {
-    const modal = document.getElementById("global-modal");
-    const content = document.getElementById("modal-content-area");
-
-    // Buscando os dados necessários para as caixas de seleção
-    const [{ data: consumos }, { data: roupas }, { data: calcados }] = await Promise.all([
-        supabase.from('catalogo').select('id, nome, unidade_medida').eq('tipo', 'CONSUMO').order('nome'),
-        supabase.from('catalogo').select('id, nome').eq('tipo', 'ROUPAS').order('nome'),
-        supabase.from('catalogo').select('id, nome').eq('tipo', 'CALCADOS').order('nome'),
-    ]);
-
-    const { data: tamanhosRoupas } = await supabase.from('tamanhos_roupas').select('nome').order('ordem');
-    const { data: tamanhosCalcados } = await supabase.from('tamanhos_calcados').select('nome').order('ordem');
-
-    // --- Monta o HTML do Modal ---
-    content.innerHTML = `
-        <h3>Novo Pedido Prévio</h3>
-
-        <div class="tab-pedido-previo">
-            <button class="tab-button active" onclick="window.showPedidoTab('tab-consumo')">Materiais de Consumo</button>
-            <button class="tab-button" onclick="window.showPedidoTab('tab-uniformes')">Uniformes (Roupas/Calçados)</button>
-        </div>
-
-        <div id="tab-consumo" class="tab-content-pedido" style="display:block;">
-            <h4>Materiais de Consumo</h4>
-            <div id="itens-consumo-area">
-                <p>Nenhum item adicionado.</p>
-            </div>
-            <button class="btn-primary" onclick="window.addConsumoItem(${JSON.stringify(consumos)})">+ Adicionar Item</button>
-        </div>
-
-        <div id="tab-uniformes" class="tab-content-pedido" style="display:none;">
-            <h4>Uniformes e Calçados</h4>
-            <div id="itens-uniforme-area">
-                <p>Nenhum uniforme adicionado.</p>
-            </div>
-            <button class="btn-primary" onclick="window.addUniformeItem(${JSON.stringify(roupas)}, ${JSON.stringify(calcados)}, ${JSON.stringify(tamanhosRoupas)}, ${JSON.stringify(tamanhosCalcados)})">+ Adicionar Uniforme</button>
-        </div>
-        
-        <hr style="margin-top: 20px;">
-        <label>Motivo da Solicitação:</label>
-        <textarea id="pedido-motivo" rows="3" placeholder="Descreva o motivo desta solicitação..."></textarea>
-
-        <div style="margin-top:15px; text-align:right">
-            <button class="btn-cancelar" onclick="window.closeGlobalModal()">Cancelar</button>
-            <button class="btn-confirmar" onclick="window.salvarPedidoPrevio()">Enviar Pedido</button>
-        </div>
-    `;
-    modal.style.display = 'block';
-    
-    // Inicializa arrays temporários no estado global
-    window.itensPedidoConsumo = [];
-    window.itensPedidoUniformes = [];
-}
-
 // Funções utilitárias para o modal (coloque junto com as funções de modal)
 window.showPedidoTab = function(tabId) {
     document.querySelectorAll('.tab-content-pedido').forEach(tab => tab.style.display = 'none');
@@ -3440,54 +3385,6 @@ async function renderPedidoPrevioAdmin(container) {
     container.innerHTML = html;
 }
 
-window.salvarPedidoPrevio = async function() {
-    const motivo = document.getElementById('pedido-motivo').value;
-    const itens = [...window.itensPedidoConsumo, ...window.itensPedidoUniformes];
-
-    if (itens.length === 0 || !motivo) {
-        alert("Adicione itens e preencha o motivo para enviar o pedido.");
-        return;
-    }
-
-    // 1. Salva o cabeçalho do pedido (pedidos_previos)
-    const { data: pedido, error: pedidoError } = await supabase.from('pedidos_previos').insert({
-        unidade_id: userProfile.unidade_id,
-        usuario_id: currentUserId,
-        motivo: motivo,
-        status: 'PENDENTE'
-    }).select().single();
-
-    if (pedidoError) {
-        console.error("Erro ao salvar pedido:", pedidoError);
-        alert("Erro ao salvar o pedido prévio.");
-        return;
-    }
-
-    // 2. Salva os itens do pedido (itens_pedido_previo)
-    const itensToInsert = itens.map(i => ({
-        pedido_id: pedido.id,
-        catalogo_id: i.catalogo_id,
-        quantidade: i.quantidade,
-        tamanho: i.tamanho || null
-    }));
-    
-    const { error: itensError } = await supabase.from('itens_pedido_previo').insert(itensToInsert);
-
-    if (itensError) {
-        console.error("Erro ao salvar itens:", itensError);
-        alert("Erro ao salvar os itens do pedido.");
-        // O pedido foi criado, mas os itens falharam. Idealmente, deveria reverter o pedido.
-        return; 
-    }
-
-    // 3. Loga a ação
-    await window.logAction(currentUserId, userProfile.unidade_id, 'SOLICITADO', `Solicitado pela Escola. ID Pedido: ${pedido.id}`);
-
-    alert("Pedido prévio enviado com sucesso! Aguarde a avaliação da administração.");
-    window.closeGlobalModal();
-    window.renderTabPedidoPrevio(); // Atualiza a tela para mostrar o novo pedido (se for admin)
-}
-
 window.imprimirPedidoPrevio = async function(pedido) {
     // Gera HTML para impressão
     const itens = pedido.conteudo_json;
@@ -3563,140 +3460,432 @@ window.verificarAlertasAdmin = async function() {
     }
 }
 
-window.renderTabPedidoPrevio = function() {
+// SUBSTITUIR A FUNÇÃO EXISTENTE: window.renderTabPedidoPrevio
+window.renderTabPedidoPrevio = async function() {
     const tab = document.getElementById("tab-content");
-    tab.innerHTML = `
-        <div style="text-align:center; padding:50px; color:#64748b;">
-            <i class="fas fa-calendar-alt" style="font-size:3rem; margin-bottom:15px;"></i>
-            <h3>Módulo de Pedido Prévio</h3>
-            <p>Esta funcionalidade está preparada para desenvolvimento futuro.</p>
-        </div>
-    `;
-}
+    tab.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando solicitações...</div>';
 
-window.addConsumoItem = function(consumos) {
-    const itemId = Date.now();
-    window.itensPedidoConsumo.push({ id: itemId, catalogo_id: null, quantidade: 1, nome: '', unidade: '' });
-    window.renderConsumoItems(consumos);
-}
-
-window.renderConsumoItems = function(consumos) {
-    const area = document.getElementById('itens-consumo-area');
-    if (!area) return;
-
-    if (window.itensPedidoConsumo.length === 0) {
-        area.innerHTML = '<p>Nenhum item adicionado.</p>';
-        return;
-    }
-
-    let html = '<table class="tabela-config"><thead><tr><th>Material</th><th style="width: 100px;">Qtd</th><th style="width: 50px;">Ação</th></tr></thead><tbody>';
-
-    window.itensPedidoConsumo.forEach(item => {
-        const selectOptions = consumos.map(c => 
-            `<option value="${c.id}" ${item.catalogo_id === c.id ? 'selected' : ''} data-unidade="${c.unidade_medida}">${c.nome}</option>`
-        ).join('');
-
-        html += `
-            <tr id="item-consumo-${item.id}">
-                <td>
-                    <select onchange="window.updateItemPedido(this, ${item.id}, 'consumo', 'catalogo_id', ${JSON.stringify(consumos)})">
-                        <option value="">Selecione...</option>
-                        ${selectOptions}
-                    </select>
-                </td>
-                <td>
-                    <input type="number" value="${item.quantidade}" min="1" onchange="window.updateItemPedido(this, ${item.id}, 'consumo', 'quantidade')">
-                </td>
-                <td>
-                    <button class="btn-cancelar" onclick="window.removeItemPedido(${item.id}, 'consumo', ${JSON.stringify(consumos)})">X</button>
-                </td>
-            </tr>
+    // ================= PESQUISA PERFIL ESCOLA =================
+    if (userProfile.nivel === 'escola') {
+        tab.innerHTML = `
+            <div style="text-align:center; padding:50px; color:#1e293b; background:#f8fafc; border-radius:12px;">
+                <i class="fas fa-tshirt" style="font-size:4rem; margin-bottom:20px; color: var(--primary);"></i>
+                <h3>Solicitação de Uniformes</h3>
+                <p style="max-width:500px; margin: 15px auto;">Clique no botão abaixo para abrir a grade de solicitação e informar as quantidades necessárias para sua unidade.</p>
+                <button class="btn-confirmar" style="font-size:1.2rem; padding: 15px 30px;" onclick="window.openModalSolicitacaoEscola()">
+                    <i class="fas fa-plus-circle"></i> Solicitar Uniformes
+                </button>
+                 <div style="margin-top: 30px;">
+                    <h4>Suas Solicitações Recentes</h4>
+                    <div id="lista-solicitacoes-escola">Carregando...</div>
+                 </div>
+            </div>
         `;
-    });
-    html += '</tbody></table>';
-    area.innerHTML = html;
-}
+        // Carrega histórico simples da escola
+        await renderHistoricoSolicitacoesEscola();
+    } 
+    // ================= PERFIL ADMIN =================
+    else if (['admin', 'super'].includes(userProfile.nivel)) {
+        const { data: pedidos, error } = await supabase.from('pedidos_previos')
+            .select(`id, data_criacao, status, escola_nome, criado_por_nome`)
+            .order('data_criacao', { ascending: false });
 
-window.addUniformeItem = function(roupas, calcados, tamanhosRoupas, tamanhosCalcados) {
-    // Implementação detalhada para uniformes e tamanhos seria extensa,
-    // mas a lógica básica é a mesma: adicione um objeto ao array temporário
-    // e chame uma função de renderização.
-
-    // Devido à complexidade de grade, vou focar em adicionar um único item para simplificar:
-    alert("Funcionalidade de Uniformes/Tamanhos adicionada. Por brevidade, use o prompt como item temporário. Implementar a grade de tamanhos requer mais código CSS/HTML/JS.");
-    
-    const uniformeNome = prompt("Nome do Uniforme/Calçado:");
-    const uniformeTamanho = prompt("Tamanho (Ex: M, 38):");
-    const uniformeQtd = prompt("Quantidade:");
-
-    if(uniformeNome && uniformeQtd) {
-        // Encontra o ID do catálogo, se existir
-        const allUniforms = [...roupas, ...calcados];
-        const itemCatalogo = allUniforms.find(u => u.nome.toUpperCase() === uniformeNome.toUpperCase());
-        
-        window.itensPedidoUniformes.push({
-            id: Date.now(),
-            catalogo_id: itemCatalogo ? itemCatalogo.id : null, // Pode ser null se for genérico
-            nome: uniformeNome,
-            tamanho: uniformeTamanho,
-            quantidade: parseInt(uniformeQtd) || 1
-        });
-        window.renderUniformeItems();
-    }
-}
-
-window.renderUniformeItems = function() {
-    const area = document.getElementById('itens-uniforme-area');
-    if (!area) return;
-
-    if (window.itensPedidoUniformes.length === 0) {
-        area.innerHTML = '<p>Nenhum uniforme adicionado.</p>';
-        return;
-    }
-
-    let html = '<table class="tabela-config"><thead><tr><th>Material</th><th>Tamanho</th><th style="width: 100px;">Qtd</th><th style="width: 50px;">Ação</th></tr></thead><tbody>';
-
-    window.itensPedidoUniformes.forEach(item => {
-        html += `
-            <tr id="item-uniforme-${item.id}">
-                <td>${item.nome}</td>
-                <td>${item.tamanho || 'N/A'}</td>
-                <td>${item.quantidade}</td>
-                <td>
-                    <button class="btn-cancelar" onclick="window.removeItemPedido(${item.id}, 'uniforme')">X</button>
-                </td>
-            </tr>
-        `;
-    });
-    html += '</tbody></table>';
-    area.innerHTML = html;
-}
-
-window.updateItemPedido = function(element, itemId, type, field, consumos) {
-    const list = type === 'consumo' ? window.itensPedidoConsumo : window.itensPedidoUniformes;
-    const item = list.find(i => i.id === itemId);
-
-    if (item) {
-        if (field === 'catalogo_id') {
-            item.catalogo_id = parseInt(element.value);
-            const selectedConsumo = consumos.find(c => c.id === item.catalogo_id);
-            item.nome = selectedConsumo ? selectedConsumo.nome : '';
-            item.unidade = selectedConsumo ? selectedConsumo.unidade_medida : '';
-        } else if (field === 'quantidade') {
-            item.quantidade = parseInt(element.value) || 1;
+        if (error) {
+            tab.innerHTML = `<p style="color:red">Erro ao carregar: ${error.message}</p>`;
+            return;
         }
+
+        let html = `
+            <div class="uniformes-header"><h2><i class="fas fa-clipboard-list"></i> Solicitações das Escolas</h2></div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Data Solicitação</th>
+                        <th>Escola / Unidade</th>
+                        <th>Solicitante</th>
+                        <th>Status</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (pedidos && pedidos.length > 0) {
+            pedidos.forEach(p => {
+                const dataFormatada = new Date(p.data_criacao).toLocaleString('pt-BR');
+                let statusClass = 'status-tag ';
+                if(p.status === 'PENDENTE') statusClass += 'conservacao-regular'; // Amarelo
+                else if(p.status === 'TRANSFORMADO EM PEDIDO') statusClass += 'conservacao-novo'; // Verde
+                else statusClass += 'status-log-pendente';
+
+                html += `
+                    <tr>
+                        <td>#${p.id}</td>
+                        <td>${dataFormatada}</td>
+                        <td style="font-weight:bold;">${p.escola_nome || 'N/A'}</td>
+                        <td>${p.criado_por_nome || '-'}</td>
+                        <td><span class="${statusClass}">${p.status}</span></td>
+                        <td>
+                            <button class="btn-confirmar" style="background-color: var(--primary);" onclick="window.viewSolicitacaoAdmin(${p.id})">
+                                <i class="fas fa-eye"></i> Visualizar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        } else {
+            html += `<tr><td colspan="6" style="text-align:center; padding:20px;">Nenhuma solicitação encontrada.</td></tr>`;
+        }
+        html += `</tbody></table>`;
+        tab.innerHTML = html;
     }
 }
 
+// NOVA FUNÇÃO: Abre o modal com a grade de solicitação
+window.openModalSolicitacaoEscola = async function() {
+    const modal = document.getElementById("global-modal");
+    const content = document.getElementById("modal-content-area");
+    content.innerHTML = '<p style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Carregando grade de uniformes...</p>';
+    modal.style.display = 'block';
 
-window.removeItemPedido = function(itemId, type, consumos) {
-    if (type === 'consumo') {
-        window.itensPedidoConsumo = window.itensPedidoConsumo.filter(i => i.id !== itemId);
-        window.renderConsumoItems(consumos);
-    } else {
-        window.itensPedidoUniformes = window.itensPedidoUniformes.filter(i => i.id !== itemId);
-        window.renderUniformeItems();
+    try {
+        // 1. Busca dados necessários em paralelo
+        const [{ data: roupas }, { data: calcados }, { data: tamRoupas }, { data: tamCalcados }] = await Promise.all([
+            supabase.from('catalogo').select('id, nome').eq('tipo', 'UNIFORMES ROUPAS').eq('ativo', true).order('nome'),
+            supabase.from('catalogo').select('id, nome').eq('tipo', 'UNIFORMES CALÇADOS').eq('ativo', true).order('nome'),
+            supabase.from('tamanhos_roupas').select('tamanho').order('ordem'),
+            supabase.from('tamanhos_calcados').select('numero').order('ordem')
+        ]);
+
+        let html = `<h3><i class="fas fa-tshirt"></i> Solicitar Uniformes</h3>
+                    <p style="background:#eff6ff; padding:10px; border-radius:8px; border-left:4px solid var(--primary); margin-bottom:20px;">
+                        Preencha as quantidades desejadas na grade abaixo. Deixe em branco ou 0 os itens que não precisa.
+                    </p>`;
+
+        // === GRADE DE ROUPAS ===
+        if (roupas.length > 0 && tamRoupas.length > 0) {
+            html += `<h4>Roupas</h4>
+            <div style="overflow-x:auto; margin-bottom:25px;">
+                <table class="tabela-grade uniformes-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; background:#f1f5f9;">ITEM</th>
+                            ${tamRoupas.map(t => `<th>${t.tamanho}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            
+            roupas.forEach(prod => {
+                html += `<tr>
+                    <td style="text-align:left; font-weight:bold; background:#f8fafc;">${prod.nome}</td>
+                    ${tamRoupas.map(t => `
+                        <td>
+                            <input type="number" min="0" class="input-solicitacao" 
+                                   data-prod-id="${prod.id}" 
+                                   data-tamanho="${t.tamanho}" 
+                                   data-tipo-cat="ROUPA"
+                                   style="width:50px; text-align:center;">
+                        </td>`).join('')}
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
+
+        // === GRADE DE CALÇADOS (Dividida em duas linhas como na imagem) ===
+        if (calcados.length > 0 && tamCalcados.length > 0) {
+            html += `<h4>Tênis / Calçados</h4>`;
+            
+            // Divide os tamanhos de calçados na metade para fazer duas linhas de cabeçalho
+            const midpoint = Math.ceil(tamCalcados.length / 2);
+            const row1Tams = tamCalcados.slice(0, midpoint);
+            const row2Tams = tamCalcados.slice(midpoint);
+
+            const renderCalcadoRow = (tamsObj) => {
+                let headerStr = `<tr><th style="text-align:left; background:#f1f5f9;">ITEM</th>${tamsObj.map(t => `<th>${t.numero}</th>`).join('')}</tr>`;
+                let bodyStr = '';
+                calcados.forEach(prod => {
+                    bodyStr += `<tr>
+                        <td style="text-align:left; font-weight:bold; background:#f8fafc;">${prod.nome}</td>
+                        ${tamsObj.map(t => `
+                            <td>
+                                <input type="number" min="0" class="input-solicitacao" 
+                                       data-prod-id="${prod.id}" 
+                                       data-tamanho="${t.numero}" 
+                                       data-tipo-cat="CALCADO"
+                                       style="width:50px; text-align:center;">
+                            </td>`).join('')}
+                    </tr>`;
+                });
+                return `<div style="overflow-x:auto; margin-bottom:15px;"><table class="tabela-grade uniformes-table"><thead>${headerStr}</thead><tbody>${bodyStr}</tbody></table></div>`;
+            };
+
+            if (row1Tams.length > 0) html += renderCalcadoRow(row1Tams);
+            if (row2Tams.length > 0) html += renderCalcadoRow(row2Tams);
+        }
+
+        // Botões de Ação
+        html += `<div style="margin-top:25px; text-align:right; border-top:1px solid #e2e8f0; padding-top:15px;">
+                    <button class="btn-cancelar" onclick="window.closeModal()" style="margin-right:10px;">Cancelar</button>
+                    <button class="btn-confirmar" onclick="window.salvarSolicitacaoEscola()">Confirmar Solicitação</button>
+                 </div>`;
+
+        content.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        content.innerHTML = `<p style="color:red; padding:20px;">Erro ao carregar grade: ${e.message}</p>`;
     }
+}
+
+// NOVA FUNÇÃO: Salva os dados da grade no banco
+window.salvarSolicitacaoEscola = async function() {
+    if (!userProfile.unidadeId) return alert("Erro: Seu usuário não está vinculado a uma escola.");
+
+    const inputs = document.querySelectorAll('.input-solicitacao');
+    const itensParaSalvar = [];
+
+    // Varre todos os inputs da grade
+    inputs.forEach(inp => {
+        const qtd = parseInt(inp.value);
+        if (qtd && qtd > 0) {
+            itensParaSalvar.push({
+                catalogo_id: inp.dataset.prodId,
+                tamanho: inp.dataset.tamanho,
+                quantidade: qtd
+                // Nota: O tipo (ROUPA/CALCADO) não precisa ir pro banco se já temos o catalogo_id
+            });
+        }
+    });
+
+    if (itensParaSalvar.length === 0) {
+        return alert("Preencha pelo menos uma quantidade na grade.");
+    }
+
+    const btn = document.querySelector('#modal-content-area .btn-confirmar');
+    btn.innerText = "Salvando..."; btn.disabled = true;
+
+    try {
+        // 1. Cria o cabeçalho da solicitação
+        const { data: pedidoHeader, error: errHeader } = await supabase.from('pedidos_previos').insert({
+            escola_id: userProfile.unidadeId,
+            escola_nome: userProfile.nome, // Assumindo que o nome do usuário escola é o nome da escola
+            status: 'PENDENTE',
+            criado_por_id: currentUserId,
+            criado_por_nome: userProfile.nome,
+            data_criacao: new Date().toISOString()
+             // Removemos 'conteudo_json' e 'motivo' pois não são usados nesta nova abordagem
+        }).select().single();
+
+        if (errHeader) throw errHeader;
+
+        // 2. Prepara e insere os itens
+        const itensInsert = itensParaSalvar.map(i => ({
+            pedido_id: pedidoHeader.id,
+            catalogo_id: i.catalogo_id,
+            tamanho: i.tamanho,
+            quantidade: i.quantidade
+        }));
+
+        const { error: errItens } = await supabase.from('itens_pedido_previo').insert(itensInsert);
+        if (errItens) throw errItens;
+
+        alert("Solicitação enviada com sucesso!");
+        window.closeModal();
+        window.renderTabPedidoPrevio(); // Recarrega a tela
+
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao salvar: " + e.message);
+        btn.innerText = "Confirmar Solicitação"; btn.disabled = false;
+    }
+}
+
+// NOVA FUNÇÃO: Visualização detalhada para o Admin
+window.viewSolicitacaoAdmin = async function(pedidoPrevioId) {
+    const modal = document.getElementById("global-modal");
+    const content = document.getElementById("modal-content-area");
+    content.innerHTML = '<p style="text-align:center; padding:20px;">Carregando detalhes...</p>';
+    modal.style.display = 'block';
+
+    try {
+        // 1. Busca Cabeçalho
+        const { data: header } = await supabase.from('pedidos_previos')
+            .select('*').eq('id', pedidoPrevioId).single();
+
+        [cite_start]// 2. Busca Itens com relacionamento do catálogo [cite: 164, 166]
+        const { data: itens } = await supabase.from('itens_pedido_previo')
+            .select('quantidade, tamanho, catalogo(nome, tipo)')
+            .eq('pedido_id', pedidoPrevioId);
+
+        let html = `<h3>Solicitação #${header.id}</h3>
+            <div style="margin-bottom:15px; padding:10px; background:#f8fafc; border-radius:8px;">
+                <strong>Escola:</strong> ${header.escola_nome}<br>
+                <strong>Data:</strong> ${new Date(header.data_criacao).toLocaleString()}<br>
+                <strong>Status:</strong> ${header.status}
+            </div>
+            <h4>Itens Solicitados:</h4>
+            <table class="table-geral" style="width:100%">
+                <thead><tr style="background:#f1f5f9;"><th>Produto</th><th>Tipo</th><th>Tamanho</th><th>Qtd</th></tr></thead>
+                <tbody>`;
+        
+        if(itens && itens.length > 0){
+            itens.forEach(i => {
+                 html += `<tr>
+                    <td>${i.catalogo?.nome || '-'}</td>
+                    <td>${i.catalogo?.tipo || '-'}</td>
+                    <td style="text-align:center">${i.tamanho || '-'}</td>
+                    <td style="text-align:center; font-weight:bold;">${i.quantidade}</td>
+                 </tr>`;
+            });
+        } else {
+            html += '<tr><td colspan="4">Nenhum item encontrado.</td></tr>';
+        }
+        html += `</tbody></table>`;
+
+        // BOTÕES DE AÇÃO (Apenas se estiver PENDENTE)
+        if(header.status === 'PENDENTE') {
+            html += `
+            <div style="margin-top:25px; padding-top:15px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+                <button class="btn-confirmar" style="background-color:#64748b;" onclick="window.imprimirSolicitacao(${pedidoPrevioId})">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+                 <button class="btn-confirmar" style="background-color:#64748b;" onclick="window.imprimirSolicitacao(${pedidoPrevioId})">
+                    <i class="fas fa-file-pdf"></i> PDF
+                </button>
+                <button class="btn-confirmar" style="background-color:#166534; padding: 10px 20px; font-size: 1.1em;" onclick="window.transformarEmPedidoReal(${pedidoPrevioId}, '${header.escola_nome}', ${header.escola_id})">
+                    <i class="fas fa-magic"></i> Transformar em Pedido
+                </button>
+            </div>`;
+        } else {
+             html += `<p style="text-align:right; margin-top:20px; color:#64748b;">Esta solicitação já foi processada.</p>`;
+        }
+
+        content.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        content.innerHTML = `<p style="color:red;">Erro: ${e.message}</p>`;
+    }
+}
+
+// NOVA FUNÇÃO: Impressão da Solicitação
+window.imprimirSolicitacao = async function(pedidoId) {
+    const { data: header } = await supabase.from('pedidos_previos').select('*').eq('id', pedidoId).single();
+    const { data: itens } = await supabase.from('itens_pedido_previo').select('quantidade, tamanho, catalogo(nome)').eq('pedido_id', pedidoId);
+
+    let itensHtml = `<table style="width:100%; border-collapse:collapse; margin-top:20px; font-size:12px;">
+        <thead><tr style="background:#eee;"><th style="border:1px solid #000; padding:5px;">Produto</th><th style="border:1px solid #000; padding:5px;">Tamanho</th><th style="border:1px solid #000; padding:5px;">Qtd</th></tr></thead><tbody>`;
+    itens.forEach(i => {
+        itensHtml += `<tr>
+            <td style="border:1px solid #000; padding:5px;">${i.catalogo.nome}</td>
+            <td style="border:1px solid #000; padding:5px; text-align:center;">${i.tamanho}</td>
+            <td style="border:1px solid #000; padding:5px; text-align:center; font-weight:bold;">${i.quantidade}</td>
+        </tr>`;
+    });
+    itensHtml += `</tbody></table>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(`<html><head><title>Solicitação #${pedidoId}</title>
+        <style>@media print{@page{size:A4;margin:15mm;}body{font-family:Arial;}}</style>
+    </head><body>
+        <div style="text-align:center;"><h2>Solicitação de Uniformes #${pedidoId}</h2></div>
+        <p><strong>Escola:</strong> ${header.escola_nome}</p>
+        <p><strong>Data:</strong> ${new Date(header.data_criacao).toLocaleString()}</p>
+        <p><strong>Solicitante:</strong> ${header.criado_por_nome}</p>
+        <hr>
+        ${itensHtml}
+        <script>window.onload=function(){setTimeout(()=>{window.print(); window.close();},500)}</script>
+    </body></html>`);
+    win.document.close();
+}
+
+// NOVA FUNÇÃO: Converte a solicitação em um pedido real na aba "Pedidos"
+window.transformarEmPedidoReal = async function(pedidoPrevioId, escolaNome, escolaId) {
+    if(!confirm(`Confirma transformar a Solicitação #${pedidoPrevioId} em um Pedido de Saída real para "${escolaNome}"?`)) return;
+
+    const btn = document.querySelector('#modal-content-area .btn-confirmar[onclick*="transformarEmPedidoReal"]');
+    btn.innerText = "Processando..."; btn.disabled = true;
+
+    try {
+        [cite_start]// 1. Busca os itens da solicitação prévia [cite: 164]
+        const { data: itensPrevios, error: errBusca } = await supabase.from('itens_pedido_previo')
+            .select('*')
+            .eq('pedido_id', pedidoPrevioId);
+        if (errBusca) throw errBusca;
+
+        [cite_start]// 2. Cria o Pedido Real na tabela 'pedidos' [cite: 184]
+        const { data: novoPedido, error: errPedReal } = await supabase.from('pedidos').insert({
+            unidade_destino_id: escolaId,
+            status: 'PENDENTE', // Status inicial do pedido real
+            data_solicitacao: new Date().toISOString(),
+            solicitante_id: currentUserId,
+            observacoes: `Gerado a partir da Solicitação #${pedidoPrevioId}`
+        }).select().single();
+
+        if (errPedReal) throw errPedReal;
+
+        [cite_start]// 3. Copia os itens para a tabela real 'itens_pedido' [cite: 160]
+        // Nota: quantity_atendida inicia como 0 para que a logística faça a separação.
+        const itensReaisInsert = itensPrevios.map(ip => ({
+            pedido_id: novoPedido.id,
+            produto_id: ip.catalogo_id,
+            quantidade_solicitada: ip.quantidade,
+            quantidade_atendida: 0, 
+            tamanho: ip.tamanho
+        }));
+
+        const { error: errItensReais } = await supabase.from('itens_pedido').insert(itensReaisInsert);
+        if (errItensReais) throw errItensReais;
+
+        // 4. Atualiza o status da solicitação prévia
+        const { error: errUpdatePrevio } = await supabase.from('pedidos_previos')
+            .update({ status: 'TRANSFORMADO EM PEDIDO' })
+            .eq('id', pedidoPrevioId);
+        if (errUpdatePrevio) throw errUpdatePrevio;
+        
+        // Registrar histórico global da ação
+        await registrarHistorico(null, 0, 'TRANSFORMACAO_PEDIDO', `Solicitação #${pedidoPrevioId} convertida no Pedido #${novoPedido.id}`, userProfile?.nome, escolaId);
+
+        alert(`Sucesso! O Pedido #${novoPedido.id} foi criado na aba Pedidos.`);
+        window.closeModal();
+        window.renderTabPedidoPrevio(); // Atualiza a lista
+
+    } catch (e) {
+        console.error(e);
+        alert("Erro na transformação: " + e.message);
+        btn.innerText = "Transformar em Pedido"; btn.disabled = false;
+    }
+}
+
+// Função auxiliar para mostrar histórico na tela da escola
+async function renderHistoricoSolicitacoesEscola() {
+    const area = document.getElementById('lista-solicitacoes-escola');
+    if(!userProfile.unidadeId) {
+        area.innerHTML = '<p style="color:red">Usuário sem unidade vinculada.</p>';
+        return;
+    }
+
+    const { data: pedidos } = await supabase.from('pedidos_previos')
+        .select('id, data_criacao, status')
+        .eq('escola_id', userProfile.unidadeId)
+        .order('data_criacao', { ascending: false })
+        .limit(5);
+
+    if(!pedidos || pedidos.length === 0) {
+        area.innerHTML = '<p>Nenhuma solicitação anterior.</p>';
+        return;
+    }
+
+    let html = '<ul style="list-style:none; padding:0; max-width:500px; margin:auto; text-align:left;">';
+    pedidos.forEach(p => {
+         html += `<li style="background:white; padding:10px; margin-bottom:5px; border-radius:8px; border:1px solid #e2e8f0; display:flex; justify-content:space-between;">
+            <span>Solicitação #${p.id} - ${new Date(p.data_criacao).toLocaleDateString()}</span>
+            <span style="font-weight:bold;">${p.status}</span>
+         </li>`;
+    });
+    html += '</ul>';
+    area.innerHTML = html;
 }
 
 window.gerarRelatorioPDF = async function(tipo) {
